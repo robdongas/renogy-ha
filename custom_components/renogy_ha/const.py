@@ -1,4 +1,5 @@
 """Constants for the Renogy BLE integration."""
+
 import logging
 
 DOMAIN = "renogy_ha"

@@ -41,14 +41,14 @@ This checklist outlines all the steps needed to implement the Renogy Rover BLE i
 ---
 
 ## 3. Data Parsing & Integration of `renogy-ble` Library
-- [ ] **Parsing Raw Data**
-  - [ ] In `ble.py`, integrate the `renogy-ble` library to parse raw Modbus data.
-  - [ ] Read raw data from the discovered BLE devices.
-  - [ ] Pass the raw data to the parsing library and retrieve structured data.
-- [ ] **Data Scaling and Mapping**
-  - [ ] Ensure numeric values are scaled correctly (e.g., battery voltage ×0.1, current ×0.01, etc.) based on the register map.
-- [ ] **Unit Testing Parsing**
-  - [ ] Write unit tests to supply sample raw data and validate that the parsed output matches expected sensor values.
+- [x] **Parsing Raw Data**
+  - [x] In `ble.py`, integrate the `renogy-ble` library to parse raw Modbus data.
+  - [x] Read raw data from the discovered BLE devices.
+  - [x] Pass the raw data to the parsing library and retrieve structured data.
+- [x] **Data Scaling and Mapping**
+  - [x] Ensure numeric values are scaled correctly (e.g., battery voltage ×0.1, current ×0.01, etc.) based on the register map.
+- [x] **Unit Testing Parsing**
+  - [x] Write unit tests to supply sample raw data and validate that the parsed output matches expected sensor values.
 
 ---
 

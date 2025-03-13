@@ -1,8 +1,9 @@
 """Tests for the BLE module."""
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from custom_components.renogy_ha.ble import RenogyBLEClient, RenogyBLEDevice
 from custom_components.renogy_ha.const import RENOGY_BT_PREFIX
@@ -15,7 +16,11 @@ def mock_ble_device_bt1():
     device.name = f"{RENOGY_BT_PREFIX}7724620D"
     device.address = "AA:BB:CC:DD:EE:FF"
     device.rssi = -60
+    # Make the device behave like a BLEDevice without using spec
+    device.__str__ = lambda self: self.address
+    device.__repr__ = lambda self: self.address
     return device
+
 
 @pytest.fixture
 def mock_non_renogy_device():
@@ -27,6 +32,12 @@ def mock_non_renogy_device():
     return device
 
 
+@pytest.fixture
+def mock_renogy_device(mock_ble_device_bt1):
+    """Create a mock RenogyBLEDevice instance."""
+    return RenogyBLEDevice(mock_ble_device_bt1)
+
+
 class TestRenogyBLEClient:
     """Test the RenogyBLEClient class."""
 
@@ -34,13 +45,13 @@ class TestRenogyBLEClient:
     async def test_is_renogy_device(self, mock_ble_device_bt1, mock_non_renogy_device):
         """Test the is_renogy_device method."""
         client = RenogyBLEClient()
-        
+
         # Test BT-1 and BT-2 devices
         assert client.is_renogy_device(mock_ble_device_bt1) is True
-        
+
         # Test non-Renogy device
         assert client.is_renogy_device(mock_non_renogy_device) is False
-        
+
         # Test device with no name
         nameless_device = MagicMock()
         nameless_device.name = None
@@ -50,16 +61,17 @@ class TestRenogyBLEClient:
     async def test_scan_for_devices(self, mock_ble_device_bt1, mock_non_renogy_device):
         """Test scanning for devices."""
         client = RenogyBLEClient()
-        
+
         # Mock the discover method to return our test devices
-        with patch('bleak.BleakScanner.discover', return_value=[
-            mock_ble_device_bt1, mock_non_renogy_device
-        ]):
+        with patch(
+            "bleak.BleakScanner.discover",
+            return_value=[mock_ble_device_bt1, mock_non_renogy_device],
+        ):
             devices = await client.scan_for_devices()
-            
+
             # Should find 1 Renogy device
             assert len(devices) == 1
-            
+
             # Check that the devices were correctly identified
             device_addresses = [device.address for device in devices]
             assert mock_ble_device_bt1.address in device_addresses
@@ -69,11 +81,11 @@ class TestRenogyBLEClient:
     async def test_scan_exception_handling(self):
         """Test exception handling during scanning."""
         client = RenogyBLEClient()
-        
+
         # Mock the discover method to raise an exception
-        with patch('bleak.BleakScanner.discover', side_effect=Exception("Test error")):
+        with patch("bleak.BleakScanner.discover", side_effect=Exception("Test error")):
             devices = await client.scan_for_devices()
-            
+
             # Should return an empty list when an exception occurs
             assert len(devices) == 0
 
@@ -81,18 +93,189 @@ class TestRenogyBLEClient:
     async def test_polling_starts_and_stops(self):
         """Test that polling starts and stops correctly."""
         client = RenogyBLEClient(scan_interval=0.1)  # Short interval for testing
-        
+
         # Mock scan_for_devices to return an empty list of devices
-        with patch.object(client, 'scan_for_devices', return_value=[]):
+        with patch.object(client, "scan_for_devices", return_value=[]):
             # Start polling
             await client.start_polling()
             assert client._running is True
             assert client._scan_task is not None
-            
+
             # Wait briefly to ensure the polling loop runs at least once
             await asyncio.sleep(0.2)
-            
+
             # Stop polling
             await client.stop_polling()
             assert client._running is False
             assert client._scan_task is None
+
+    @pytest.mark.asyncio
+    async def test_read_device_data(self, mock_renogy_device):
+        """Test reading data from a device."""
+        client = RenogyBLEClient()
+
+        # Mock BleakClient to simulate BLE communication
+        mock_client = AsyncMock()
+        mock_client.is_connected = True
+        mock_client.connect = AsyncMock()
+        mock_client.disconnect = AsyncMock()
+        mock_client.write_gatt_char = AsyncMock()
+
+        # Setup the mock read responses
+        battery_data = bytes([0x01, 0x02, 0x03, 0x04])  # Mock battery data
+        pv_data = bytes([0x05, 0x06, 0x07, 0x08])  # Mock PV data
+        device_data = bytes([0x09, 0x0A, 0x0B, 0x0C])  # Mock device data
+
+        mock_client.read_gatt_char = AsyncMock(
+            side_effect=[battery_data, pv_data, device_data]
+        )
+
+        # Mock the update_parsed_data method to return success
+        mock_renogy_device.update_parsed_data = MagicMock(return_value=True)
+
+        # Create a BleakClient mock that accepts any device and returns our mock client
+        def mock_bleak_client_init(device, *args, **kwargs):
+            # Accept any device that has an address attribute
+            assert hasattr(device, "address"), "Device must have an address attribute"
+            return mock_client
+
+        # Patch BleakClient class and create a proper BLE device
+        with patch(
+            "custom_components.renogy_ha.ble.BleakClient",
+            side_effect=mock_bleak_client_init,
+        ):
+            mock_renogy_device.ble_device.address = (
+                "AA:BB:CC:DD:EE:FF"  # Ensure address is set
+            )
+            success = await client.read_device_data(mock_renogy_device)
+
+            # Verify the result was successful
+            assert success is True
+
+            # Check that the update_parsed_data method was called with the correct data
+            expected_combined_data = battery_data + pv_data + device_data
+            mock_renogy_device.update_parsed_data.assert_called_once()
+            actual_data = mock_renogy_device.update_parsed_data.call_args[0][0]
+            assert actual_data == expected_combined_data
+
+            # Verify the connection was established and then closed
+            mock_client.connect.assert_called_once()
+            mock_client.disconnect.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_read_device_data_connection_failure(self, mock_renogy_device):
+        """Test handling of connection failure during data reading."""
+        client = RenogyBLEClient()
+
+        # Mock BleakClient to simulate connection failure
+        mock_client = AsyncMock()
+        mock_client.connect = AsyncMock(side_effect=Exception("Connection failed"))
+
+        with patch("bleak.BleakClient", return_value=mock_client):
+            success = await client.read_device_data(mock_renogy_device)
+
+            # Verify the result was not successful
+            assert success is False
+
+            # Check that the availability was updated
+            assert mock_renogy_device.failure_count == 1
+
+
+class TestRenogyBLEDevice:
+    """Test the RenogyBLEDevice class."""
+
+    def test_device_initialization(self, mock_ble_device_bt1):
+        """Test device initialization."""
+        device = RenogyBLEDevice(mock_ble_device_bt1)
+
+        # Verify the initial state
+        assert device.address == mock_ble_device_bt1.address
+        assert device.name == mock_ble_device_bt1.name
+        assert device.rssi == mock_ble_device_bt1.rssi
+        assert device.available is True
+        assert device.failure_count == 0
+        assert device.parsed_data == {}
+        assert device.model == "rover"
+
+    def test_update_availability(self, mock_renogy_device):
+        """Test the update_availability method."""
+        # Test successful update
+        mock_renogy_device.available = False
+        mock_renogy_device.failure_count = 3
+        mock_renogy_device.update_availability(True)
+
+        assert mock_renogy_device.available is True
+        assert mock_renogy_device.failure_count == 0
+
+        # Test failed update
+        mock_renogy_device.update_availability(False)
+        assert mock_renogy_device.failure_count == 1
+        assert (
+            mock_renogy_device.available is True
+        )  # Still true until max_failures reached
+
+        # Test reaching max failures
+        mock_renogy_device.max_failures = 3
+        mock_renogy_device.update_availability(False)  # 2 failures
+        mock_renogy_device.update_availability(False)  # 3 failures
+
+        assert mock_renogy_device.failure_count == 3
+        assert mock_renogy_device.available is False
+
+    def test_is_available(self, mock_renogy_device):
+        """Test the is_available property."""
+        mock_renogy_device.available = True
+        mock_renogy_device.failure_count = 0
+        assert mock_renogy_device.is_available is True
+
+        mock_renogy_device.available = False
+        assert mock_renogy_device.is_available is False
+
+        mock_renogy_device.available = True
+        mock_renogy_device.failure_count = mock_renogy_device.max_failures
+        assert mock_renogy_device.is_available is False
+
+    @patch("custom_components.renogy_ha.ble.RenogyParser")
+    def test_update_parsed_data(self, mock_renogy_parser, mock_renogy_device):
+        """Test the update_parsed_data method."""
+        # Mock the RenogyParser.parse method
+        mock_parsed_data = {
+            "battery_voltage": 12.6,
+            "battery_current": 1.5,
+            "battery_percentage": 85,
+            "pv_voltage": 18.0,
+            "pv_current": 2.5,
+            "pv_power": 45,
+            "charging_status": "mppt",
+        }
+        mock_renogy_parser.parse.return_value = mock_parsed_data
+
+        # Create some test raw data
+        raw_data = bytes([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+
+        # Test successful parsing
+        result = mock_renogy_device.update_parsed_data(raw_data)
+        assert result is True
+        assert mock_renogy_device.parsed_data == mock_parsed_data
+
+        # Verify the parser was called correctly
+        mock_renogy_parser.parse.assert_called_once_with(
+            raw_data, mock_renogy_device.model
+        )
+
+        # Test handling of empty parse result
+        mock_renogy_parser.parse.return_value = {}
+        result = mock_renogy_device.update_parsed_data(raw_data)
+        assert result is False
+
+        # Test handling of parser exception
+        mock_renogy_parser.parse.side_effect = Exception("Parse error")
+        result = mock_renogy_device.update_parsed_data(raw_data)
+        assert result is False
+
+    @patch("custom_components.renogy_ha.ble.RenogyParser", None)
+    def test_update_parsed_data_no_parser(self, mock_renogy_device):
+        """Test update_parsed_data when RenogyParser is not available."""
+        raw_data = bytes([0x01, 0x02, 0x03, 0x04])
+        result = mock_renogy_device.update_parsed_data(raw_data)
+        assert result is False
