@@ -23,20 +23,20 @@ This checklist outlines all the steps needed to implement the Renogy Rover BLE i
     ```
 - [x] **Metadata and Licensing**
   - [x] Write a minimal `hacs.json` with name, version, documentation URL, and supported Home Assistant versions.
-  - [x] Create a minimal README describing the integration’s purpose and usage.
+  - [x] Create a minimal README describing the integration's purpose and usage.
   - [x] Add the Apache License 2.0 file to the repository.
   - [X] Ensure all placeholder files (`__init__.py`, `config_flow.py`, etc.) are created.
 
 ---
 
 ## 2. BLE Communication Module
-- [ ] **Basic BLE Functionality**
-  - [ ] In `ble.py`, implement BLE scanning for Renogy Rover devices (BT-1 and BT-2 modules) using their unique Bluetooth identifiers.
-  - [ ] Implement a polling function with a default interval of 60 seconds, and make it configurable (range: 10–600 seconds).
-  - [ ] Add logging for the start and stop of the scanning process.
-- [ ] **Testing BLE Scanning**
-  - [ ] Create a test stub in `tests/test_ble.py` to mock BLE scanning.
-  - [ ] Ensure the test returns a dummy list of devices and validates the scanning function.
+- [x] **Basic BLE Functionality**
+  - [x] In `ble.py`, implement BLE scanning for Renogy Rover devices (BT-1 and BT-2 modules) using their unique Bluetooth identifiers.
+  - [x] Implement a polling function with a default interval of 60 seconds, and make it configurable (range: 10–600 seconds).
+  - [x] Add logging for the start and stop of the scanning process.
+- [x] **Testing BLE Scanning**
+  - [x] Create a test stub in `tests/test_ble.py` to mock BLE scanning.
+  - [x] Ensure the test returns a dummy list of devices and validates the scanning function.
 
 ---
 

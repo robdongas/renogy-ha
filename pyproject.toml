@@ -4,4 +4,14 @@ version = "0.1.0"
 description = "Home Assisstant integration for Renogy devices"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "bleak>=0.22.3",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+    "asyncio: mark test as an asyncio coroutine",
+]
