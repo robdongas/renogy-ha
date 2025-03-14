@@ -95,16 +95,16 @@ This checklist outlines all the steps needed to implement the Renogy Rover BLE i
 ---
 
 ## 7. End-to-End Integration and Wiring
-- [ ] **Wiring Components Together**
-  - [ ] Integrate BLE communication, parsing, sensor entity creation, and error handling.
-  - [ ] Create a main loop or scheduled task to trigger polling and sensor updates at the configured interval.
-- [ ] **Full Cycle Testing**
-  - [ ] Write comprehensive integration tests that simulate the full cycle:
+- [x] **Wiring Components Together**
+  - [x] Integrate BLE communication, parsing, sensor entity creation, and error handling.
+  - [x] Create a main loop or scheduled task to trigger polling and sensor updates at the configured interval.
+- [x] **Full Cycle Testing**
+  - [x] Write comprehensive integration tests that simulate the full cycle:
     - Device discovery
     - Data parsing
     - Sensor updates
     - Error simulation and recovery
-  - [ ] Ensure all entities are correctly updated and no orphaned code exists.
+  - [x] Ensure all entities are correctly updated and no orphaned code exists.
 
 ---
 

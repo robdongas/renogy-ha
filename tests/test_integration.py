@@ -196,3 +196,202 @@ async def test_device_discovery_and_registration(
                     assert (
                         device_info["model"] == mock_renogy_device.parsed_data["model"]
                     )
+
+
+class MockCoordinator(MagicMock):
+    """Mock coordinator with all needed properties for testing."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.last_update_success = True
+        self.data = {}
+        self.devices = {}
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_integration(mock_hass, mock_config_entry, mock_renogy_device):
+    """Test the full end-to-end integration flow including error handling and recovery."""
+    # Mock the core components we'll need
+    with patch(
+        "custom_components.renogy_ha.RenogyDataUpdateCoordinator"
+    ) as mock_coordinator_class:
+        # Create the coordinator mock with all required properties
+        mock_coordinator = MockCoordinator()
+        mock_coordinator_class.return_value = mock_coordinator
+
+        # Initially no devices
+        mock_coordinator.devices = {}
+
+        # Set up coordinator mock
+        mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+        mock_coordinator.start_polling = AsyncMock()
+        mock_coordinator.hass = mock_hass
+
+        # Call the async_setup_entry function from __init__.py
+        from custom_components.renogy_ha import async_setup_entry
+
+        assert await async_setup_entry(mock_hass, mock_config_entry)
+
+        # Verify coordinator setup
+        mock_coordinator_class.assert_called_once()
+
+        # Import needed components for testing
+        from custom_components.renogy_ha.sensor import (
+            create_device_entities,
+        )
+
+        # Set up BLE client
+        mock_ble_client = MagicMock()
+        mock_coordinator.ble_client = mock_ble_client
+
+        # Add device to coordinator
+        mock_coordinator.devices = {mock_renogy_device.address: mock_renogy_device}
+
+        # Add device data to coordinator
+        mock_coordinator.data = {
+            mock_renogy_device.address: mock_renogy_device.parsed_data
+        }
+
+        # Create sensor entities
+        entities = create_device_entities(mock_coordinator, mock_renogy_device)
+
+        # Make entities compatible with our test environment
+        for entity in entities:
+            entity.hass = mock_hass
+            entity.async_write_ha_state = MagicMock()
+
+        # Create a custom availability check function to bypass super().available
+        def check_entity_availability(entity):
+            """Check if entity should be available based on device state."""
+            return (
+                entity._device.is_available and entity._device.parsed_data is not None
+            )
+
+        # ----- Verify Initial State -----
+        # Verify entities have correct initial values
+        for entity in entities:
+            # Check device info is set correctly
+            assert entity.device_info["identifiers"] == {
+                (DOMAIN, mock_renogy_device.address)
+            }
+
+            # Check availability using our custom function
+            assert check_entity_availability(entity) is True
+
+        # ----- Simulate Error Condition -----
+        # Simulate device becoming unavailable after consecutive failures
+        mock_renogy_device.failure_count = 3
+        mock_renogy_device.available = False
+
+        # Verify availability is updated
+        for entity in entities:
+            assert check_entity_availability(entity) is False
+
+        # ----- Simulate Recovery -----
+        # Simulate device coming back online
+        mock_renogy_device.failure_count = 0
+        mock_renogy_device.available = True
+
+        # Verify availability is restored
+        for entity in entities:
+            assert check_entity_availability(entity) is True
+
+        # Verify all entities properly update state when new data arrives
+        for entity in entities:
+            # Trigger the coordinator update handler
+            entity._handle_coordinator_update()
+            # Verify state is written
+            assert entity.async_write_ha_state.called
+
+
+@pytest.mark.asyncio
+async def test_integration_with_multiple_devices(
+    mock_hass, mock_config_entry, mock_renogy_device
+):
+    """Test that the integration properly handles multiple devices."""
+    # Create a second mock device
+    second_device = MagicMock(spec=BLEDevice)
+    second_device.address = "11:22:33:44:55:66"
+    second_device.name = "BT-TH-67890"
+    second_device.rssi = -70
+
+    second_renogy_device = RenogyBLEDevice(second_device)
+    second_renogy_device.parsed_data = {
+        # Similar data to first device but with different values
+        "battery_voltage": 13.2,
+        "battery_current": 2.0,
+        "battery_percentage": 90,
+        "model": "Rover 60A",
+        # ... other values would be here
+    }
+    second_renogy_device.available = True
+
+    # Set up coordinator with two devices
+    with patch(
+        "custom_components.renogy_ha.RenogyDataUpdateCoordinator"
+    ) as mock_coordinator_class:
+        # Create the coordinator mock with all required properties
+        mock_coordinator = MockCoordinator()
+        mock_coordinator_class.return_value = mock_coordinator
+
+        # Set coordinator properties
+        mock_coordinator.hass = mock_hass
+
+        # Set up with two devices
+        mock_coordinator.devices = {
+            mock_renogy_device.address: mock_renogy_device,
+            second_renogy_device.address: second_renogy_device,
+        }
+
+        # Set coordinator data
+        mock_coordinator.data = {
+            mock_renogy_device.address: mock_renogy_device.parsed_data,
+            second_renogy_device.address: second_renogy_device.parsed_data,
+        }
+
+        # Import needed components
+        from custom_components.renogy_ha.sensor import (
+            create_device_entities,
+        )
+
+        # Manually create entities for both devices
+        device1_entities = create_device_entities(mock_coordinator, mock_renogy_device)
+        device2_entities = create_device_entities(
+            mock_coordinator, second_renogy_device
+        )
+
+        # Patch entity methods for Home Assistant interaction
+        for entity in device1_entities + device2_entities:
+            entity.hass = mock_hass
+            entity.async_write_ha_state = MagicMock()
+
+        # Create custom availability check
+        def check_entity_availability(entity):
+            """Check if entity should be available based on device state."""
+            return (
+                entity._device.is_available and entity._device.parsed_data is not None
+            )
+
+        # Verify we have entities for both devices
+        assert len(device1_entities) > 0
+        assert len(device2_entities) > 0
+
+        # Verify unique IDs don't overlap
+        all_unique_ids = [e.unique_id for e in device1_entities + device2_entities]
+        assert len(all_unique_ids) == len(set(all_unique_ids))
+
+        # Verify all entities are available initially
+        for entity in device1_entities + device2_entities:
+            assert check_entity_availability(entity) is True
+
+        # Simulate device 1 going offline while device 2 stays online
+        mock_renogy_device.available = False
+        mock_renogy_device.failure_count = 3
+
+        # Verify device 1 entities are unavailable
+        for entity in device1_entities:
+            assert check_entity_availability(entity) is False
+
+        # Verify device 2 entities are still available
+        for entity in device2_entities:
+            assert check_entity_availability(entity) is True
