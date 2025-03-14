@@ -53,17 +53,17 @@ This checklist outlines all the steps needed to implement the Renogy Rover BLE i
 ---
 
 ## 4. Sensor Entity Mapping
-- [ ] **Create Sensor Entities**
-  - [ ] In `sensor.py`, create Home Assistant sensor classes for the following groups:
+- [x] **Create Sensor Entities**
+  - [x] In `sensor.py`, create Home Assistant sensor classes for the following groups:
     - Battery
     - Solar Panel (PV)
     - Load
     - Controller Info
-- [ ] **Attribute Configuration**
-  - [ ] Assign proper attributes to each sensor (name, unit of measurement, device_class, state_class).
-  - [ ] Map each sensor to its corresponding value from the parsed data.
-- [ ] **Testing Sensor Mapping**
-  - [ ] Write tests to confirm that, given sample parsed data, sensor entities are instantiated with correct values and metadata.
+- [x] **Attribute Configuration**
+  - [x] Assign proper attributes to each sensor (name, unit of measurement, device_class, state_class).
+  - [x] Map each sensor to its corresponding value from the parsed data.
+- [x] **Testing Sensor Mapping**
+  - [x] Write tests to confirm that, given sample parsed data, sensor entities are instantiated with correct values and metadata.
 
 ---
 
