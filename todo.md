@@ -109,18 +109,18 @@ This checklist outlines all the steps needed to implement the Renogy Rover BLE i
 ---
 
 ## 8. Documentation and Final Testing
-- [ ] **Documentation Update**
-  - [ ] Update the README with:
+- [x] **Documentation Update**
+  - [x] Update the README with:
     - Installation instructions
     - Configuration details (polling interval, etc.)
     - Supported hardware list (Renogy Rover with BT-1/BT-2 and Bluetooth adapter)
     - Troubleshooting steps
-- [ ] **Final Test Suite**
-  - [ ] Write additional tests for edge cases (malformed data, unexpected disconnections).
-  - [ ] Confirm that all unit and integration tests pass.
-- [ ] **Code Review and Integration Checklist**
-  - [ ] Perform a final review to ensure all components are integrated.
-  - [ ] Verify adherence to Home Assistant integration best practices.
-  - [ ] Finalize the integration for deployment via HACS.
+- [x] **Final Test Suite**
+  - [x] Write additional tests for edge cases (malformed data, unexpected disconnections).
+  - [x] Confirm that all unit and integration tests pass.
+- [x] **Code Review and Integration Checklist**
+  - [x] Perform a final review to ensure all components are integrated.
+  - [x] Verify adherence to Home Assistant integration best practices.
+  - [x] Finalize the integration for deployment via HACS.
 
 ---
