@@ -448,37 +448,62 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Get the latest data for our device from the coordinator
-        if (
-            self.coordinator.data
-            and self._device.address in self.coordinator.data
-            and self.coordinator.data[self._device.address]
-        ):
-            self._last_updated = datetime.now()
-            # Check if the entity description key exists in the device data
-            if (
-                self.entity_description.key
-                in self.coordinator.data[self._device.address]
-            ):
-                LOGGER.debug(
-                    f"Updated sensor {self.name} with new value from coordinator"
-                )
+        self._last_updated = datetime.now()
 
-            self._attr_available = self._device.is_available
+        # Always update availability based on device status
+        self._attr_available = self._device.is_available
+
+        try:
+            # Get the latest data for our device from the coordinator
+            if self.coordinator.data and self._device.address in self.coordinator.data:
+                device_data = self.coordinator.data[self._device.address]
+                if device_data is not None:
+                    LOGGER.debug(
+                        f"Updated sensor {self.name} with new value from coordinator"
+                    )
+            # Always write state, even if no data, to ensure UI updates
             self.async_write_ha_state()
-        else:
-            # No data available for our device
-            LOGGER.debug(f"No data for sensor {self.name} in coordinator update")
+        except Exception as e:
+            LOGGER.warning(f"Error updating sensor {self.name}: {e}")
+            # Still write state to show the error condition
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> Any:
         """Return the sensor's value."""
-        if not self._device.parsed_data:
-            return None
+        try:
+            if not self._device.parsed_data:
+                return None
 
-        if self.entity_description.value_fn:
-            return self.entity_description.value_fn(self._device.parsed_data)
+            if self.entity_description.value_fn:
+                value = self.entity_description.value_fn(self._device.parsed_data)
 
+                # Basic type validation based on device_class
+                if value is not None:
+                    if self.device_class in [
+                        SensorDeviceClass.VOLTAGE,
+                        SensorDeviceClass.CURRENT,
+                        SensorDeviceClass.TEMPERATURE,
+                        SensorDeviceClass.POWER,
+                        SensorDeviceClass.ENERGY,
+                    ]:
+                        try:
+                            value = float(value)
+                            # Basic range validation
+                            if value < -1000 or value > 10000:
+                                LOGGER.warning(
+                                    f"Value {value} out of reasonable range for {self.name}"
+                                )
+                                return None
+                        except (ValueError, TypeError):
+                            LOGGER.warning(
+                                f"Invalid numeric value for {self.name}: {value}"
+                            )
+                            return None
+
+                return value
+        except Exception as e:
+            LOGGER.warning(f"Error getting native value for {self.name}: {e}")
         return None
 
     @property

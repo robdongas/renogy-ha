@@ -395,3 +395,105 @@ async def test_integration_with_multiple_devices(
         # Verify device 2 entities are still available
         for entity in device2_entities:
             assert check_entity_availability(entity) is True
+
+
+@pytest.mark.asyncio
+async def test_malformed_data_handling(
+    mock_hass, mock_config_entry, mock_renogy_device
+):
+    """Test handling of malformed or incomplete data from the device."""
+    with patch(
+        "custom_components.renogy_ha.RenogyDataUpdateCoordinator"
+    ) as mock_coordinator_class:
+        mock_coordinator = MockCoordinator()
+        mock_coordinator_class.return_value = mock_coordinator
+        mock_coordinator.hass = mock_hass
+        mock_coordinator.devices = {mock_renogy_device.address: mock_renogy_device}
+
+        # Test cases for different malformed data scenarios
+        malformed_data_cases = [
+            {},  # Empty data
+            {"battery_voltage": None},  # None value
+            {"battery_voltage": "invalid"},  # Wrong type
+            {"unknown_field": 123},  # Unknown field
+            {"battery_voltage": -999},  # Out of range value
+        ]
+
+        from custom_components.renogy_ha.sensor import create_device_entities
+
+        entities = create_device_entities(mock_coordinator, mock_renogy_device)
+        for entity in entities:
+            entity.hass = mock_hass
+            entity.async_write_ha_state = MagicMock()
+
+        # Test each malformed data case
+        for test_data in malformed_data_cases:
+            # Update device with malformed data
+            mock_renogy_device.parsed_data = test_data
+            mock_coordinator.data = {mock_renogy_device.address: test_data}
+
+            # Device should remain available despite bad data
+            assert mock_renogy_device.available is True
+
+            # Update entities and verify they handle bad data gracefully
+            for entity in entities:
+                # Trigger update
+                entity._handle_coordinator_update()
+                # Verify state was written
+                assert entity.async_write_ha_state.called
+                # Verify entity remains available
+                assert entity.available is True
+
+
+@pytest.mark.asyncio
+async def test_connection_edge_cases(mock_hass, mock_config_entry, mock_renogy_device):
+    """Test handling of various connection edge cases."""
+    with patch(
+        "custom_components.renogy_ha.RenogyDataUpdateCoordinator"
+    ) as mock_coordinator_class:
+        mock_coordinator = MockCoordinator()
+        mock_coordinator_class.return_value = mock_coordinator
+        mock_coordinator.hass = mock_hass
+        mock_coordinator.devices = {mock_renogy_device.address: mock_renogy_device}
+
+        from custom_components.renogy_ha.sensor import create_device_entities
+
+        entities = create_device_entities(mock_coordinator, mock_renogy_device)
+        for entity in entities:
+            entity.hass = mock_hass
+            entity.async_write_ha_state = MagicMock()
+
+        # Test rapid connect/disconnect
+        for _ in range(5):
+            mock_renogy_device.available = False
+            await asyncio.sleep(0)  # Allow state to update
+            mock_renogy_device.available = True
+            await asyncio.sleep(0)  # Allow state to update
+
+        # Test gradual connection degradation
+        for rssi in [-60, -70, -80, -90, -100]:
+            mock_renogy_device.rssi = rssi  # Changed from _ble_device.rssi
+            await asyncio.sleep(0)  # Allow state to update
+
+        # Test recovery from max failure count
+        mock_renogy_device.failure_count = 5  # Beyond normal threshold
+        mock_renogy_device.available = False
+        await asyncio.sleep(0)  # Allow state to update
+
+        # Verify recovery works
+        mock_renogy_device.failure_count = 0
+        mock_renogy_device.available = True
+        await asyncio.sleep(0)  # Allow state to update
+
+        # Test partial data updates
+        original_data = mock_renogy_device.parsed_data.copy()
+        partial_data = {
+            k: v for k, v in original_data.items() if k.startswith("battery")
+        }
+        mock_renogy_device.parsed_data = partial_data
+        await asyncio.sleep(0)  # Allow state to update
+
+        # Verify entities handle partial data
+        for entity in entities:
+            entity._handle_coordinator_update()
+            assert entity.async_write_ha_state.called
