@@ -4,6 +4,9 @@ import asyncio
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
+from bleak import BleakClient, BleakScanner
+from bleak.backends.device import BLEDevice
+
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     LOGGER,
@@ -11,9 +14,6 @@ from .const import (
     MIN_SCAN_INTERVAL,
     RENOGY_BT_PREFIX,
 )
-
-from bleak import BleakClient, BleakScanner
-from bleak.backends.device import BLEDevice
 
 try:
     from renogy_ble import RenogyParser
@@ -69,12 +69,25 @@ class RenogyBLEDevice:
     def update_availability(self, success: bool) -> None:
         """Update the availability based on success/failure of communication."""
         if success:
+            if self.failure_count > 0:
+                LOGGER.info(
+                    "Device %s communication restored after %s consecutive failures",
+                    self.name,
+                    self.failure_count,
+                )
             self.failure_count = 0
             if not self.available:
                 LOGGER.info("Device %s is now available", self.name)
                 self.available = True
         else:
             self.failure_count += 1
+            LOGGER.warning(
+                "Communication failure with device %s (failure %s of %s)",
+                self.name,
+                self.failure_count,
+                self.max_failures,
+            )
+
             if self.failure_count >= self.max_failures and self.available:
                 LOGGER.warning(
                     "Device %s marked unavailable after %s consecutive failures",

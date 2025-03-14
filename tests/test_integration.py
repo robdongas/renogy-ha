@@ -137,7 +137,6 @@ async def test_device_discovery_and_registration(
             "homeassistant.helpers.device_registry.async_get",
             return_value=device_registry,
         ):
-
             # Create a mock coordinator for sensor testing
             test_coordinator = MagicMock()
             test_coordinator.devices = {mock_renogy_device.address: mock_renogy_device}
@@ -197,4 +196,3 @@ async def test_device_discovery_and_registration(
                     assert (
                         device_info["model"] == mock_renogy_device.parsed_data["model"]
                     )
-

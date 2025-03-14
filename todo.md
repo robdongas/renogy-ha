@@ -81,16 +81,16 @@ This checklist outlines all the steps needed to implement the Renogy Rover BLE i
 ---
 
 ## 6. Error Handling and Availability Management
-- [ ] **Failure Tracking**
-  - [ ] Implement logic to track consecutive polling failures.
-  - [ ] After 3 consecutive failures, mark the device/sensors as unavailable.
-- [ ] **Recovery Logic**
-  - [ ] Implement logic to mark the device/sensors as available once a successful poll is received.
-- [ ] **Logging**
-  - [ ] Log all communication errors and recovery events.
-- [ ] **Testing Error Handling**
-  - [ ] Write unit tests to simulate consecutive failures and ensure devices are marked unavailable.
-  - [ ] Test recovery behavior when BLE communication is restored.
+- [x] **Failure Tracking**
+  - [x] Implement logic to track consecutive polling failures.
+  - [x] After 3 consecutive failures, mark the device/sensors as unavailable.
+- [x] **Recovery Logic**
+  - [x] Implement logic to mark the device/sensors as available once a successful poll is received.
+- [x] **Logging**
+  - [x] Log all communication errors and recovery events.
+- [x] **Testing Error Handling**
+  - [x] Write unit tests to simulate consecutive failures and ensure devices are marked unavailable.
+  - [x] Test recovery behavior when BLE communication is restored.
 
 ---
 

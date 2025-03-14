@@ -279,3 +279,96 @@ class TestRenogyBLEDevice:
         raw_data = bytes([0x01, 0x02, 0x03, 0x04])
         result = mock_renogy_device.update_parsed_data(raw_data)
         assert result is False
+
+    def test_availability_after_consecutive_failures(self, mock_renogy_device):
+        """Test device availability after consecutive failures."""
+        # Initial state should be available
+        assert mock_renogy_device.available is True
+        assert mock_renogy_device.is_available is True
+
+        # First failure
+        mock_renogy_device.update_availability(False)
+        assert mock_renogy_device.failure_count == 1
+        assert mock_renogy_device.available is True
+        assert mock_renogy_device.is_available is True
+
+        # Second failure
+        mock_renogy_device.update_availability(False)
+        assert mock_renogy_device.failure_count == 2
+        assert mock_renogy_device.available is True
+        assert mock_renogy_device.is_available is True
+
+        # Third failure - should mark device as unavailable
+        mock_renogy_device.update_availability(False)
+        assert mock_renogy_device.failure_count == 3
+        assert mock_renogy_device.available is False
+        assert mock_renogy_device.is_available is False
+
+        # Fourth failure - should keep device unavailable
+        mock_renogy_device.update_availability(False)
+        assert mock_renogy_device.failure_count == 4
+        assert mock_renogy_device.available is False
+        assert mock_renogy_device.is_available is False
+
+    def test_recovery_after_failures(self, mock_renogy_device):
+        """Test device recovery after previous failures."""
+        # Set initial state to unavailable after failures
+        mock_renogy_device.failure_count = 4
+        mock_renogy_device.available = False
+        assert mock_renogy_device.is_available is False
+
+        # Successful communication should reset failure count and make device available
+        mock_renogy_device.update_availability(True)
+        assert mock_renogy_device.failure_count == 0
+        assert mock_renogy_device.available is True
+        assert mock_renogy_device.is_available is True
+
+
+class TestRenogyBLEClientErrorHandling:
+    """Test error handling in the RenogyBLEClient class."""
+
+    @pytest.mark.asyncio
+    async def test_consecutive_failures_in_polling(self, mock_renogy_device):
+        """Test the behavior when consecutive failures occur in the polling loop."""
+        client = RenogyBLEClient(scan_interval=0.1)  # Short interval for testing
+
+        # Mock scan_for_devices to return our device
+        with (
+            patch.object(client, "scan_for_devices", return_value=[mock_renogy_device]),
+            patch.object(
+                client, "read_device_data", side_effect=[False, False, False, True]
+            ),
+        ):
+            # Add the device to discovered devices
+            client.discovered_devices[mock_renogy_device.address] = mock_renogy_device
+
+            # Start polling
+            await client.start_polling()
+
+            # Wait for 4 polling cycles (3 failures followed by 1 success)
+            await asyncio.sleep(0.5)
+
+            # Stop polling
+            await client.stop_polling()
+
+            # Verify the device went unavailable after 3 failures and then available again
+            assert mock_renogy_device.failure_count == 0  # Reset after success
+            assert mock_renogy_device.available is True
+
+    @pytest.mark.asyncio
+    async def test_device_skipped_when_unavailable(self, mock_renogy_device):
+        """Test that unavailable devices are skipped in the polling loop."""
+        client = RenogyBLEClient()
+
+        # Mark device as unavailable
+        mock_renogy_device.available = False
+        mock_renogy_device.failure_count = 3
+
+        # Should return False without attempting to connect
+        success = await client.read_device_data(mock_renogy_device)
+        assert success is False
+
+        # Create a mock BleakClient to verify it wasn't called
+        with patch("bleak.BleakClient") as mock_bleak_client:
+            await client.read_device_data(mock_renogy_device)
+            mock_bleak_client.assert_not_called()
