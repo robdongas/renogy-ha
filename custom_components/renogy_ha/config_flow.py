@@ -35,7 +35,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Only allow one instance of the integration
         await self.async_set_unique_id(DOMAIN)
-        self._abort_if_single_instance_allowed()
+        self._abort_if_unique_id_mismatch()
 
         return self.async_create_entry(
             title="Renogy BLE",
