@@ -24,7 +24,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 
 from .ble import RenogyBLEDevice
 from .const import ATTR_MANUFACTURER, ATTR_MODEL, DOMAIN, LOGGER
@@ -56,6 +59,7 @@ KEY_CONTROLLER_TEMPERATURE = "controller_temperature"
 KEY_DEVICE_ID = "device_id"
 KEY_MODEL = "model"
 KEY_MAX_DISCHARGING_POWER_TODAY = "max_discharging_power_today"
+KEY_FIRMWARE_VERSION = "firmware_version"
 
 # Battery type text values mapping
 BATTERY_TYPES = {0: "open", 1: "sealed", 2: "gel", 3: "lithium", 4: "custom"}
@@ -264,6 +268,13 @@ CONTROLLER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         value_fn=lambda data: data.get(KEY_MODEL),
     ),
     RenogyBLESensorDescription(
+        key=KEY_FIRMWARE_VERSION,
+        name="Firmware Version",
+        device_class=None,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get(KEY_FIRMWARE_VERSION),
+    ),
+    RenogyBLESensorDescription(
         key=KEY_MAX_DISCHARGING_POWER_TODAY,
         name="Max Discharging Power Today",
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -282,43 +293,96 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Renogy BLE sensor."""
+    """Set up the Renogy BLE sensors."""
     LOGGER.debug("Setting up Renogy BLE sensors")
+
     renogy_data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = renogy_data["coordinator"]
-    devices = renogy_data["devices"]
 
+    # Start the BLE polling
+    await coordinator.start_polling()
+
+    # Return early if no devices found
+    if not coordinator.devices:
+        LOGGER.warning("No Renogy devices found")
+        return
+
+    # Create entities for each device and each sensor type
     entities = []
-    for device in devices:
-        for description in ALL_SENSORS:
-            entities.append(RenogyBLESensor(coordinator, device, description))
 
-    async_add_entities(entities)
+    # Process each discovered device
+    for device_address, device in coordinator.devices.items():
+        # Register all sensor entities for this device
+        device_entities = []
+
+        # Group sensors by category
+        for category_name, sensor_list in {
+            "Battery": BATTERY_SENSORS,
+            "PV": PV_SENSORS,
+            "Load": LOAD_SENSORS,
+            "Controller": CONTROLLER_SENSORS,
+        }.items():
+            for description in sensor_list:
+                sensor = RenogyBLESensor(
+                    coordinator, device, description, category_name
+                )
+                device_entities.append(sensor)
+
+        entities.extend(device_entities)
+
+        # Update the device list in hass.data for this entry
+        if device not in renogy_data["devices"]:
+            renogy_data["devices"].append(device)
+
+    # Add all entities at once
+    if entities:
+        async_add_entities(entities)
 
 
-class RenogyBLESensor(SensorEntity, CoordinatorEntity):
+class RenogyBLESensor(CoordinatorEntity, SensorEntity):
     """Representation of a Renogy BLE sensor."""
 
     entity_description: RenogyBLESensorDescription
 
     def __init__(
         self,
-        coordinator,
+        coordinator: DataUpdateCoordinator,
         device: RenogyBLEDevice,
         description: RenogyBLESensorDescription,
+        category: str = None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._device = device
+        self._category = category
         self._attr_unique_id = f"{device.address}_{description.key}"
-        self._attr_name = f"{device.name} {description.name}"
+
+        # Name includes the category for better organization
+        if category:
+            self._attr_name = f"{device.name} {category} {description.name}"
+        else:
+            self._attr_name = f"{device.name} {description.name}"
+
+        # Properly set up device_info for the device registry
+        model = (
+            device.parsed_data.get(KEY_MODEL, ATTR_MODEL)
+            if device.parsed_data
+            else ATTR_MODEL
+        )
+        firmware_version = (
+            device.parsed_data.get(KEY_FIRMWARE_VERSION) if device.parsed_data else None
+        )
+
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device.address)},
             name=device.name,
             manufacturer=ATTR_MANUFACTURER,
-            model=ATTR_MODEL,
+            model=model,
+            sw_version=firmware_version,
+            hw_version=f"BLE Address: {device.address}",
         )
+
         self._attr_available = device.is_available
 
     @property

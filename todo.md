@@ -68,15 +68,15 @@ This checklist outlines all the steps needed to implement the Renogy Rover BLE i
 ---
 
 ## 5. Device Discovery & Auto-Registration
-- [ ] **Integration Initialization**
-  - [ ] Modify `__init__.py` to start BLE polling at the configured interval.
-- [ ] **Device Registration**
-  - [ ] On device discovery, register/update the device in the Home Assistant device registry with attributes (manufacturer, model, firmware version, device ID).
-- [ ] **Sensor Update Wiring**
-  - [ ] Ensure that sensor entities are updated with the latest values from BLE polling.
-- [ ] **Integration Testing**
-  - [ ] Write tests that simulate device discovery.
-  - [ ] Verify that the device is registered and sensors are created with correct attributes.
+- [x] **Integration Initialization**
+  - [x] Modify `__init__.py` to start BLE polling at the configured interval.
+- [x] **Device Registration**
+  - [x] On device discovery, register/update the device in the Home Assistant device registry with attributes (manufacturer, model, firmware version, device ID).
+- [x] **Sensor Update Wiring**
+  - [x] Ensure that sensor entities are updated with the latest values from BLE polling.
+- [x] **Integration Testing**
+  - [x] Write tests that simulate device discovery.
+  - [x] Verify that the device is registered and sensors are created with correct attributes.
 
 ---
 

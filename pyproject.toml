@@ -17,3 +17,4 @@ pythonpath = ["."]
 markers = [
     "asyncio: mark test as an asyncio coroutine",
 ]
+asyncio_default_fixture_loop_scope = "function"
