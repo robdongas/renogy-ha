@@ -31,11 +31,57 @@ RENOGY_WRITE_CHAR_UUID = (
     "0000ffd1-0000-1000-8000-00805f9b34fb"  # Characteristic for writing commands
 )
 
+
+def modbus_crc(data: bytes) -> tuple:
+    """Calculate the Modbus CRC16 of the given data.
+
+    Returns a tuple (crc_low, crc_high) where the low byte is sent first.
+    """
+    crc = 0xFFFF
+    for pos in data:
+        crc ^= pos
+        for _ in range(8):
+            if crc & 0x0001:
+                crc = (crc >> 1) ^ 0xA001
+            else:
+                crc >>= 1
+    return (crc & 0xFF, (crc >> 8) & 0xFF)
+
+
+def create_modbus_read_request(
+    device_id: int, function_code: int, register: int, word_count: int
+) -> bytearray:
+    """Build a Modbus read request frame.
+
+    The frame consists of:
+      [device_id, function_code, register_high, register_low, word_count_high, word_count_low, crc_high, crc_low]
+
+    Note: Many Modbus implementations send the CRC as low byte first; adjust if needed.
+    """
+    frame = bytearray(
+        [
+            device_id,
+            function_code,
+            (register >> 8) & 0xFF,
+            register & 0xFF,
+            (word_count >> 8) & 0xFF,
+            word_count & 0xFF,
+        ]
+    )
+    crc_low, crc_high = modbus_crc(frame)
+    frame.extend([crc_low, crc_high])
+    LOGGER.debug("create_request_payload: %s (%s)", register, list(frame))
+    LOGGER.debug("Testing restart")
+    return frame
+
+
+# TODO: Make this configurable or automatically discover
+default_device_id = 0xFF
+
 # Modbus commands for requesting data
-# Command structure: [Function code, Register start address (2 bytes), Number of registers (2 bytes)]
-BATTERY_INFO_CMD = bytearray([0x03, 0x01, 0x00, 0x00, 0x08])
-PV_INFO_CMD = bytearray([0x03, 0x01, 0x10, 0x00, 0x08])
-DEVICE_INFO_CMD = bytearray([0x03, 0x00, 0x0C, 0x00, 0x08])
+device_cmd = create_modbus_read_request(default_device_id, 3, 12, 8)
+battery_cmd = create_modbus_read_request(default_device_id, 3, 57348, 1)
+pv_cmd = create_modbus_read_request(default_device_id, 3, 256, 34)
 
 
 class RenogyBLEDevice:
@@ -98,6 +144,9 @@ class RenogyBLEDevice:
 
     def update_parsed_data(self, raw_data: bytes) -> bool:
         """Parse the raw data using the renogy-ble library."""
+        if not raw_data:
+            LOGGER.error("No data received from device %s.", self.name)
+            return False
         if not RenogyParser:
             LOGGER.error("RenogyParser library not available. Unable to parse data.")
             return False
@@ -182,7 +231,6 @@ class RenogyBLEClient:
             return []
 
     async def read_device_data(self, device: RenogyBLEDevice) -> bool:
-        """Read data from a Renogy BLE device."""
         LOGGER.debug("Attempting to read data from device: %s", device.name)
 
         if not device.is_available:
@@ -195,28 +243,44 @@ class RenogyBLEClient:
         client = BleakClient(device.ble_device)
 
         try:
-            # Connect to the device
             await client.connect()
             if client.is_connected:
                 LOGGER.debug("Connected to device %s", device.name)
 
-                # Send commands and read responses
-                # Battery info
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, BATTERY_INFO_CMD)
-                battery_data = await client.read_gatt_char(RENOGY_READ_CHAR_UUID)
+                # Subscribe to notifications by defining a handler
+                notification_data = bytearray()
 
-                # PV info
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, PV_INFO_CMD)
-                pv_data = await client.read_gatt_char(RENOGY_READ_CHAR_UUID)
+                def notification_handler(sender, data):
+                    notification_data.extend(data)
 
-                # Device info
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, DEVICE_INFO_CMD)
-                device_data = await client.read_gatt_char(RENOGY_READ_CHAR_UUID)
+                await client.start_notify(RENOGY_READ_CHAR_UUID, notification_handler)
 
-                # Combine the data (simple concatenation for now)
+                # Build and send the command for device info
+                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, device_cmd)
+                await asyncio.sleep(2)  # wait longer for notification data
+                device_data = bytes(notification_data)
+                LOGGER.debug("Received device_data length: %d", len(device_data))
+                notification_data.clear()
+
+                # Build and send the Modbus read command for battery info
+                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, battery_cmd)
+                await asyncio.sleep(2)  # wait longer for notification data
+                battery_data = bytes(notification_data)
+                LOGGER.debug("Received battery_data length: %d", len(battery_data))
+                notification_data.clear()
+
+                # Build and send the command for PV info
+                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, pv_cmd)
+                await asyncio.sleep(2)  # wait longer for notification data
+                pv_data = bytes(notification_data)
+                LOGGER.debug("Received pv_data length: %d", len(pv_data))
+                notification_data.clear()
+
+                await client.stop_notify(RENOGY_READ_CHAR_UUID)
+
+                # Combine the received data
                 combined_data = battery_data + pv_data + device_data
 
-                # Parse the combined data
                 if device.update_parsed_data(combined_data):
                     LOGGER.info(
                         "Successfully read and parsed data from device %s", device.name
@@ -230,13 +294,9 @@ class RenogyBLEClient:
         except Exception as e:
             LOGGER.error("Error reading data from device %s: %s", device.name, str(e))
         finally:
-            # Ensure we disconnect even if there was an exception
             if client.is_connected:
                 await client.disconnect()
-
-            # Update device availability based on communication success
             device.update_availability(success)
-
             return success
 
     async def start_polling(self) -> None:
