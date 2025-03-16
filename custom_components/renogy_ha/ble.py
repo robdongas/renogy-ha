@@ -79,7 +79,8 @@ def create_modbus_read_request(
 default_device_id = 0xFF
 
 # Modbus commands for requesting data
-device_cmd = create_modbus_read_request(default_device_id, 3, 12, 8)
+device_info_cmd = create_modbus_read_request(default_device_id, 3, 12, 8)
+device_id_cmd = create_modbus_read_request(default_device_id, 3, 26, 1)
 battery_cmd = create_modbus_read_request(default_device_id, 3, 57348, 1)
 pv_cmd = create_modbus_read_request(default_device_id, 3, 256, 34)
 
@@ -256,10 +257,17 @@ class RenogyBLEClient:
                 await client.start_notify(RENOGY_READ_CHAR_UUID, notification_handler)
 
                 # Build and send the command for device info
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, device_cmd)
+                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, device_info_cmd)
                 await asyncio.sleep(2)  # wait longer for notification data
-                device_data = bytes(notification_data)
-                LOGGER.debug("Received device_data length: %d", len(device_data))
+                device_info_data = bytes(notification_data)
+                LOGGER.debug("Received device_data length: %d", len(device_info_data))
+                notification_data.clear()
+
+                # Build and send the command for device id
+                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, device_id_cmd)
+                await asyncio.sleep(2)  # wait longer for notification data
+                device_id_data = bytes(notification_data)
+                LOGGER.debug("Received device_data length: %d", len(device_id_data))
                 notification_data.clear()
 
                 # Build and send the Modbus read command for battery info
@@ -279,7 +287,9 @@ class RenogyBLEClient:
                 await client.stop_notify(RENOGY_READ_CHAR_UUID)
 
                 # Combine the received data
-                combined_data = battery_data + pv_data + device_data
+                combined_data = (
+                    device_info_data + device_id_data + battery_data + pv_data
+                )
 
                 if device.update_parsed_data(combined_data):
                     LOGGER.info(

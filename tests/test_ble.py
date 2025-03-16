@@ -121,9 +121,10 @@ class TestRenogyBLEClient:
         mock_client.disconnect = AsyncMock()
 
         # Setup mock data
+        device_info_data = bytes([0x09, 0x0A, 0x0B, 0x0C])  # Mock device info data
+        device_id_data = bytes([0x0D, 0x0E, 0x0F, 0x10])  # Mock device id data
         battery_data = bytes([0x01, 0x02, 0x03, 0x04])  # Mock battery data
         pv_data = bytes([0x05, 0x06, 0x07, 0x08])  # Mock PV data
-        device_data = bytes([0x09, 0x0A, 0x0B, 0x0C])  # Mock device data
 
         # Variable to store notification handler
         notification_handler = None
@@ -142,8 +143,10 @@ class TestRenogyBLEClient:
                 notification_handler(0, battery_data)
             elif command == pv_cmd_mock:
                 notification_handler(0, pv_data)
-            elif command == device_cmd_mock:
-                notification_handler(0, device_data)
+            elif command == device_info_cmd_mock:
+                notification_handler(0, device_info_data)
+            elif command == device_id_cmd_mock:
+                notification_handler(0, device_id_data)
 
         mock_client.start_notify = AsyncMock(side_effect=mock_start_notify)
         mock_client.write_gatt_char = AsyncMock(side_effect=mock_write_gatt_char)
@@ -157,7 +160,8 @@ class TestRenogyBLEClient:
             return mock_client
 
         # Create mock command identifiers for testing
-        device_cmd_mock = bytes([0xFF, 0x03, 0x00, 0x0C, 0x00, 0x08, 0x00, 0x00])
+        device_info_cmd_mock = bytes([0xFF, 0x03, 0x00, 0x0C, 0x00, 0x08, 0x00, 0x00])
+        device_id_cmd_mock = bytes([0xFF, 0x03, 0x00, 0x1A, 0x00, 0x01, 0x00, 0x00])
         battery_cmd_mock = bytes([0xFF, 0x03, 0xE0, 0x04, 0x00, 0x01, 0x00, 0x00])
         pv_cmd_mock = bytes([0xFF, 0x03, 0x01, 0x00, 0x00, 0x22, 0x00, 0x00])
 
@@ -167,7 +171,10 @@ class TestRenogyBLEClient:
                 "custom_components.renogy_ha.ble.BleakClient",
                 side_effect=mock_bleak_client_init,
             ),
-            patch("custom_components.renogy_ha.ble.device_cmd", device_cmd_mock),
+            patch(
+                "custom_components.renogy_ha.ble.device_info_cmd", device_info_cmd_mock
+            ),
+            patch("custom_components.renogy_ha.ble.device_id_cmd", device_id_cmd_mock),
             patch("custom_components.renogy_ha.ble.battery_cmd", battery_cmd_mock),
             patch("custom_components.renogy_ha.ble.pv_cmd", pv_cmd_mock),
             patch("asyncio.sleep", AsyncMock()),
@@ -191,9 +198,10 @@ class TestRenogyBLEClient:
             assert len(combined_data) > 0
 
             # Verify that the combined data contains the bytes we sent via notifications
+            assert any(b in combined_data for b in device_info_data)
+            assert any(b in combined_data for b in device_id_data)
             assert any(b in combined_data for b in battery_data)
             assert any(b in combined_data for b in pv_data)
-            assert any(b in combined_data for b in device_data)
 
             # Verify the connection was established and then closed
             mock_client.connect.assert_called_once()
@@ -202,7 +210,7 @@ class TestRenogyBLEClient:
             # Verify other method calls
             assert mock_client.start_notify.called
             assert mock_client.stop_notify.called
-            assert mock_client.write_gatt_char.call_count == 3
+            assert mock_client.write_gatt_char.call_count == 4  # Now we have 4 commands
 
     @pytest.mark.asyncio
     async def test_read_device_data_connection_failure(self, mock_renogy_device):
