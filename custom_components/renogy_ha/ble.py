@@ -71,7 +71,6 @@ def create_modbus_read_request(
     crc_low, crc_high = modbus_crc(frame)
     frame.extend([crc_low, crc_high])
     LOGGER.debug("create_request_payload: %s (%s)", register, list(frame))
-    LOGGER.debug("Testing restart")
     return frame
 
 
@@ -79,10 +78,12 @@ def create_modbus_read_request(
 default_device_id = 0xFF
 
 # Modbus commands for requesting data
-device_info_cmd = create_modbus_read_request(default_device_id, 3, 12, 8)
-device_id_cmd = create_modbus_read_request(default_device_id, 3, 26, 1)
-battery_cmd = create_modbus_read_request(default_device_id, 3, 57348, 1)
-pv_cmd = create_modbus_read_request(default_device_id, 3, 256, 34)
+commands = {
+    "device_info": (3, 12, 8),
+    "device_id": (3, 26, 1),
+    "battery": (3, 57348, 1),
+    "pv": (3, 256, 34),
+}
 
 
 class RenogyBLEDevice:
@@ -143,7 +144,7 @@ class RenogyBLEDevice:
                 )
                 self.available = False
 
-    def update_parsed_data(self, raw_data: bytes) -> bool:
+    def update_parsed_data(self, raw_data: bytes, register: int) -> bool:
         """Parse the raw data using the renogy-ble library."""
         if not raw_data:
             LOGGER.error("No data received from device %s.", self.name)
@@ -154,7 +155,9 @@ class RenogyBLEDevice:
 
         try:
             # Parse the raw data using the renogy-ble library
-            parsed = RenogyParser.parse(raw_data, self.model)
+            parsed = RenogyParser.parse(
+                raw_data, self.model, register
+            )  # Placeholder for register
 
             if not parsed:
                 LOGGER.warning("No data parsed from raw data for device %s", self.name)
@@ -256,48 +259,28 @@ class RenogyBLEClient:
 
                 await client.start_notify(RENOGY_READ_CHAR_UUID, notification_handler)
 
-                # Build and send the command for device info
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, device_info_cmd)
-                await asyncio.sleep(2)  # wait longer for notification data
-                device_info_data = bytes(notification_data)
-                LOGGER.debug("Received device_data length: %d", len(device_info_data))
-                notification_data.clear()
-
-                # Build and send the command for device id
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, device_id_cmd)
-                await asyncio.sleep(2)  # wait longer for notification data
-                device_id_data = bytes(notification_data)
-                LOGGER.debug("Received device_data length: %d", len(device_id_data))
-                notification_data.clear()
-
-                # Build and send the Modbus read command for battery info
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, battery_cmd)
-                await asyncio.sleep(2)  # wait longer for notification data
-                battery_data = bytes(notification_data)
-                LOGGER.debug("Received battery_data length: %d", len(battery_data))
-                notification_data.clear()
-
-                # Build and send the command for PV info
-                await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, pv_cmd)
-                await asyncio.sleep(2)  # wait longer for notification data
-                pv_data = bytes(notification_data)
-                LOGGER.debug("Received pv_data length: %d", len(pv_data))
-                notification_data.clear()
+                # Loop through each command and parse them separately
+                for cmd_name, cmd in commands.items():
+                    modbus_request = create_modbus_read_request(default_device_id, *cmd)
+                    LOGGER.debug(f"{cmd_name} command: {list(modbus_request)}")
+                    await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, modbus_request)
+                    await asyncio.sleep(1)
+                    result_data = bytes(notification_data)
+                    LOGGER.debug(f"Received {cmd_name} data length: {len(result_data)}")
+                    LOGGER.debug(f"{cmd_name} data (register {cmd[1]}): {result_data}")
+                    notification_data.clear()
+                    if device.update_parsed_data(result_data, register=cmd[1]):
+                        LOGGER.info(
+                            f"Successfully read and parsed {cmd_name} data from device {device.name}"
+                        )
+                        success = True
+                    else:
+                        LOGGER.warning(
+                            f"Failed to parse data from device {device.name}"
+                        )
 
                 await client.stop_notify(RENOGY_READ_CHAR_UUID)
 
-                # Combine the received data
-                combined_data = (
-                    device_info_data + device_id_data + battery_data + pv_data
-                )
-
-                if device.update_parsed_data(combined_data):
-                    LOGGER.info(
-                        "Successfully read and parsed data from device %s", device.name
-                    )
-                    success = True
-                else:
-                    LOGGER.warning("Failed to parse data from device %s", device.name)
             else:
                 LOGGER.warning("Failed to connect to device %s", device.name)
 
