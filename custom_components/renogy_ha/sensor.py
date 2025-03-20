@@ -60,7 +60,6 @@ KEY_CONTROLLER_TEMPERATURE = "controller_temperature"
 KEY_DEVICE_ID = "device_id"
 KEY_MODEL = "model"
 KEY_MAX_DISCHARGING_POWER_TODAY = "max_discharging_power_today"
-KEY_FIRMWARE_VERSION = "firmware_version"
 
 
 @dataclass
@@ -250,13 +249,6 @@ CONTROLLER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         value_fn=lambda data: data.get(KEY_MODEL),
     ),
     RenogyBLESensorDescription(
-        key=KEY_FIRMWARE_VERSION,
-        name="Firmware Version",
-        device_class=None,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get(KEY_FIRMWARE_VERSION),
-    ),
-    RenogyBLESensorDescription(
         key=KEY_MAX_DISCHARGING_POWER_TODAY,
         name="Max Discharging Power Today",
         native_unit_of_measurement=UnitOfPower.WATT,
@@ -405,16 +397,12 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
             if device.parsed_data
             else ATTR_MODEL
         )
-        firmware_version = (
-            device.parsed_data.get(KEY_FIRMWARE_VERSION) if device.parsed_data else None
-        )
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device.address)},
             name=device.name,
             manufacturer=ATTR_MANUFACTURER,
             model=model,
-            sw_version=firmware_version,
             hw_version=f"BLE Address: {device.address}",
         )
 
