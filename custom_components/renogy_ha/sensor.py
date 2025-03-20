@@ -416,12 +416,7 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
         self._category = category
         self._attr_unique_id = f"{device.address}_{description.key}"
         self._last_updated = None
-
-        # Name includes the category for better organization
-        if category:
-            self._attr_name = f"{device.name} {category} {description.name}"
-        else:
-            self._attr_name = f"{device.name} {description.name}"
+        self._attr_name = f"{device.name} {description.name}"
 
         # Properly set up device_info for the device registry
         model = (
