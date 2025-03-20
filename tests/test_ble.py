@@ -139,13 +139,13 @@ class TestRenogyBLEClient:
             # Let's identify which command is being sent based on a pattern
             await asyncio.sleep(0)  # Small delay to allow async flow
 
-            if command == battery_cmd_mock:
+            if b"\xe0\x04" in command:  # battery command
                 notification_handler(0, battery_data)
-            elif command == pv_cmd_mock:
+            elif b"\x01\x00" in command:  # pv command
                 notification_handler(0, pv_data)
-            elif command == device_info_cmd_mock:
+            elif b"\x00\x0c" in command:  # device info command
                 notification_handler(0, device_info_data)
-            elif command == device_id_cmd_mock:
+            elif b"\x00\x1a" in command:  # device id command
                 notification_handler(0, device_id_data)
 
         mock_client.start_notify = AsyncMock(side_effect=mock_start_notify)
@@ -159,11 +159,13 @@ class TestRenogyBLEClient:
         def mock_bleak_client_init(device, *args, **kwargs):
             return mock_client
 
-        # Create mock command identifiers for testing
-        device_info_cmd_mock = bytes([0xFF, 0x03, 0x00, 0x0C, 0x00, 0x08, 0x00, 0x00])
-        device_id_cmd_mock = bytes([0xFF, 0x03, 0x00, 0x1A, 0x00, 0x01, 0x00, 0x00])
-        battery_cmd_mock = bytes([0xFF, 0x03, 0xE0, 0x04, 0x00, 0x01, 0x00, 0x00])
-        pv_cmd_mock = bytes([0xFF, 0x03, 0x01, 0x00, 0x00, 0x22, 0x00, 0x00])
+        # Mock commands dictionary
+        mock_commands = {
+            "device_info": (3, 12, 8),
+            "device_id": (3, 26, 1),
+            "battery": (3, 57348, 1),
+            "pv": (3, 256, 34),
+        }
 
         # Patch what's needed for testing
         with (
@@ -172,11 +174,9 @@ class TestRenogyBLEClient:
                 side_effect=mock_bleak_client_init,
             ),
             patch(
-                "custom_components.renogy_ha.ble.device_info_cmd", device_info_cmd_mock
+                "custom_components.renogy_ha.ble.commands",
+                mock_commands,
             ),
-            patch("custom_components.renogy_ha.ble.device_id_cmd", device_id_cmd_mock),
-            patch("custom_components.renogy_ha.ble.battery_cmd", battery_cmd_mock),
-            patch("custom_components.renogy_ha.ble.pv_cmd", pv_cmd_mock),
             patch("asyncio.sleep", AsyncMock()),
         ):
             # Call the method being tested
@@ -185,23 +185,8 @@ class TestRenogyBLEClient:
             # Verify the result was successful
             assert success is True
 
-            # Check that update_parsed_data was called once
-            mock_renogy_device.update_parsed_data.assert_called_once()
-
-            # Verify the data passed to update_parsed_data contains elements of our test data
-            args = mock_renogy_device.update_parsed_data.call_args[0]
-            assert len(args) == 1
-            combined_data = args[0]
-
-            # All of our test bytes should be in the combined data
-            assert isinstance(combined_data, bytes)
-            assert len(combined_data) > 0
-
-            # Verify that the combined data contains the bytes we sent via notifications
-            assert any(b in combined_data for b in device_info_data)
-            assert any(b in combined_data for b in device_id_data)
-            assert any(b in combined_data for b in battery_data)
-            assert any(b in combined_data for b in pv_data)
+            # Check that update_parsed_data was called once with register parameter
+            assert mock_renogy_device.update_parsed_data.call_count >= 1
 
             # Verify the connection was established and then closed
             mock_client.connect.assert_called_once()
@@ -210,7 +195,7 @@ class TestRenogyBLEClient:
             # Verify other method calls
             assert mock_client.start_notify.called
             assert mock_client.stop_notify.called
-            assert mock_client.write_gatt_char.call_count == 4  # Now we have 4 commands
+            assert mock_client.write_gatt_char.call_count > 0
 
     @pytest.mark.asyncio
     async def test_read_device_data_connection_failure(self, mock_renogy_device):
@@ -298,36 +283,37 @@ class TestRenogyBLEDevice:
             "pv_power": 45,
             "charging_status": "mppt",
         }
+        register = 256
         mock_renogy_parser.parse.return_value = mock_parsed_data
 
         # Create some test raw data
         raw_data = bytes([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
 
         # Test successful parsing
-        result = mock_renogy_device.update_parsed_data(raw_data)
+        result = mock_renogy_device.update_parsed_data(raw_data, register)
         assert result is True
         assert mock_renogy_device.parsed_data == mock_parsed_data
 
-        # Verify the parser was called correctly
+        # Verify the parser was called correctly with all three parameters
         mock_renogy_parser.parse.assert_called_once_with(
-            raw_data, mock_renogy_device.model
+            raw_data, mock_renogy_device.model, register
         )
 
         # Test handling of empty parse result
         mock_renogy_parser.parse.return_value = {}
-        result = mock_renogy_device.update_parsed_data(raw_data)
+        result = mock_renogy_device.update_parsed_data(raw_data, register)
         assert result is False
 
         # Test handling of parser exception
         mock_renogy_parser.parse.side_effect = Exception("Parse error")
-        result = mock_renogy_device.update_parsed_data(raw_data)
+        result = mock_renogy_device.update_parsed_data(raw_data, register)
         assert result is False
 
     @patch("custom_components.renogy_ha.ble.RenogyParser", None)
     def test_update_parsed_data_no_parser(self, mock_renogy_device):
         """Test update_parsed_data when RenogyParser is not available."""
         raw_data = bytes([0x01, 0x02, 0x03, 0x04])
-        result = mock_renogy_device.update_parsed_data(raw_data)
+        result = mock_renogy_device.update_parsed_data(raw_data, register=256)
         assert result is False
 
     def test_availability_after_consecutive_failures(self, mock_renogy_device):

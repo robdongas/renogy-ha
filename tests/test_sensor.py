@@ -7,8 +7,6 @@ import pytest
 # Import the module we need to test
 from custom_components.renogy_ha.ble import RenogyBLEDevice
 from custom_components.renogy_ha.sensor import (
-    BATTERY_TYPES,
-    CHARGING_STATUSES,
     KEY_BATTERY_CURRENT,
     KEY_BATTERY_PERCENTAGE,
     KEY_BATTERY_TEMPERATURE,
@@ -23,7 +21,6 @@ from custom_components.renogy_ha.sensor import (
     KEY_PV_CURRENT,
     KEY_PV_POWER,
     KEY_PV_VOLTAGE,
-    LOAD_STATUSES,
 )
 
 
@@ -64,32 +61,6 @@ def mock_device():
         "max_discharging_power_today": 25,
     }
     return device
-
-
-def test_battery_type_mapping():
-    """Test the battery type text mapping."""
-    assert BATTERY_TYPES[0] == "open"
-    assert BATTERY_TYPES[1] == "sealed"
-    assert BATTERY_TYPES[2] == "gel"
-    assert BATTERY_TYPES[3] == "lithium"
-    assert BATTERY_TYPES[4] == "custom"
-
-
-def test_charging_status_mapping():
-    """Test the charging status text mapping."""
-    assert CHARGING_STATUSES[0] == "deactivated"
-    assert CHARGING_STATUSES[1] == "activated"
-    assert CHARGING_STATUSES[2] == "mppt"
-    assert CHARGING_STATUSES[3] == "equalizing"
-    assert CHARGING_STATUSES[4] == "boost"
-    assert CHARGING_STATUSES[5] == "floating"
-    assert CHARGING_STATUSES[6] == "current limiting"
-
-
-def test_load_status_mapping():
-    """Test the load status text mapping."""
-    assert LOAD_STATUSES[0] == "off"
-    assert LOAD_STATUSES[1] == "on"
 
 
 def test_sensor_key_registration():
