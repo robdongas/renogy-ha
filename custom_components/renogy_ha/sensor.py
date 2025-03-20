@@ -62,23 +62,6 @@ KEY_MODEL = "model"
 KEY_MAX_DISCHARGING_POWER_TODAY = "max_discharging_power_today"
 KEY_FIRMWARE_VERSION = "firmware_version"
 
-# Battery type text values mapping
-BATTERY_TYPES = {0: "open", 1: "sealed", 2: "gel", 3: "lithium", 4: "custom"}
-
-# Charging status text values mapping
-CHARGING_STATUSES = {
-    0: "deactivated",
-    1: "activated",
-    2: "mppt",
-    3: "equalizing",
-    4: "boost",
-    5: "floating",
-    6: "current limiting",
-}
-
-# Load status text values mapping
-LOAD_STATUSES = {0: "off", 1: "on"}
-
 
 @dataclass
 class RenogyBLESensorDescription(SensorEntityDescription):
@@ -125,7 +108,7 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         key=KEY_BATTERY_TYPE,
         name="Battery Type",
         device_class=None,
-        value_fn=lambda data: BATTERY_TYPES.get(data.get(KEY_BATTERY_TYPE), "unknown"),
+        value_fn=lambda data: data.get(KEY_BATTERY_TYPE),
     ),
     RenogyBLESensorDescription(
         key=KEY_CHARGING_AMP_HOURS_TODAY,
@@ -147,9 +130,7 @@ BATTERY_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         key=KEY_CHARGING_STATUS,
         name="Charging Status",
         device_class=None,
-        value_fn=lambda data: CHARGING_STATUSES.get(
-            data.get(KEY_CHARGING_STATUS), "unknown"
-        ),
+        value_fn=lambda data: data.get(KEY_CHARGING_STATUS),
     ),
 )
 
@@ -233,7 +214,7 @@ LOAD_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         key=KEY_LOAD_STATUS,
         name="Load Status",
         device_class=None,
-        value_fn=lambda data: LOAD_STATUSES.get(data.get(KEY_LOAD_STATUS), "unknown"),
+        value_fn=lambda data: data.get(KEY_LOAD_STATUS),
     ),
     RenogyBLESensorDescription(
         key=KEY_POWER_CONSUMPTION_TODAY,
