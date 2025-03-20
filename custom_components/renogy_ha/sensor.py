@@ -480,7 +480,6 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                         SensorDeviceClass.CURRENT,
                         SensorDeviceClass.TEMPERATURE,
                         SensorDeviceClass.POWER,
-                        SensorDeviceClass.ENERGY,
                     ]:
                         try:
                             value = float(value)
