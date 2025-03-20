@@ -1,5 +1,5 @@
 {
-  "domain": "renogy_ha",
+  "domain": "renogy",
   "name": "Renogy BLE",
   "documentation": "https://github.com/IAmTheMitchell/renogy-ha",
   "issue_tracker": "https://github.com/IAmTheMitchell/renogy-ha/issues",

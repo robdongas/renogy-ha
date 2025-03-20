@@ -2,7 +2,7 @@
 
 import logging
 
-DOMAIN = "renogy_ha"
+DOMAIN = "renogy"
 
 LOGGER = logging.getLogger(__name__)
 
