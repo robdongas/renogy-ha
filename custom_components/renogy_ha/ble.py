@@ -1,7 +1,7 @@
 """BLE communication module for Renogy devices."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 from bleak import BleakClient, BleakScanner
@@ -30,6 +30,9 @@ RENOGY_READ_CHAR_UUID = (
 RENOGY_WRITE_CHAR_UUID = (
     "0000ffd1-0000-1000-8000-00805f9b34fb"  # Characteristic for writing commands
 )
+
+# Time in minutes to wait before attempting to reconnect to unavailable devices
+UNAVAILABLE_RETRY_INTERVAL = 10
 
 
 def modbus_crc(data: bytes) -> tuple:
@@ -108,11 +111,39 @@ class RenogyBLEDevice:
         self.parsed_data: Dict[str, Any] = {}
         # Model type - default to rover
         self.model = "rover"
+        # Track when device was last marked as unavailable
+        self.last_unavailable_time: Optional[datetime] = None
 
     @property
     def is_available(self) -> bool:
         """Return True if device is available."""
         return self.available and self.failure_count < self.max_failures
+
+    @property
+    def should_retry_connection(self) -> bool:
+        """Check if we should retry connecting to an unavailable device."""
+        if self.is_available:
+            return True
+
+        # If we've never set an unavailable time, set it now
+        if self.last_unavailable_time is None:
+            self.last_unavailable_time = datetime.now()
+            return False
+
+        # Check if enough time has passed to retry
+        retry_time = self.last_unavailable_time + timedelta(
+            minutes=UNAVAILABLE_RETRY_INTERVAL
+        )
+        if datetime.now() >= retry_time:
+            LOGGER.info(
+                "Retry interval reached for unavailable device %s. Attempting reconnection...",
+                self.name,
+            )
+            # Reset the unavailable time for the next retry interval
+            self.last_unavailable_time = datetime.now()
+            return True
+
+        return False
 
     def update_availability(self, success: bool) -> None:
         """Update the availability based on success/failure of communication."""
@@ -127,6 +158,7 @@ class RenogyBLEDevice:
             if not self.available:
                 LOGGER.info("Device %s is now available", self.name)
                 self.available = True
+                self.last_unavailable_time = None
         else:
             self.failure_count += 1
             LOGGER.warning(
@@ -143,6 +175,7 @@ class RenogyBLEDevice:
                     self.max_failures,
                 )
                 self.available = False
+                self.last_unavailable_time = datetime.now()
 
     def update_parsed_data(self, raw_data: bytes, register: int) -> bool:
         """Parse the raw data using the renogy-ble library."""
@@ -235,11 +268,14 @@ class RenogyBLEClient:
             return []
 
     async def read_device_data(self, device: RenogyBLEDevice) -> bool:
+        """Read data from a Renogy BLE device."""
         LOGGER.debug("Attempting to read data from device: %s", device.name)
 
-        if not device.is_available:
-            LOGGER.warning(
-                "Device %s is marked as unavailable, skipping data read", device.name
+        # Check if the device is unavailable and we should attempt reconnection
+        if not device.is_available and not device.should_retry_connection:
+            LOGGER.debug(
+                "Device %s is unavailable and not yet due for retry attempt",
+                device.name,
             )
             return False
 
