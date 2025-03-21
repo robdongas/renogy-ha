@@ -34,6 +34,9 @@ RENOGY_WRITE_CHAR_UUID = (
 # Time in minutes to wait before attempting to reconnect to unavailable devices
 UNAVAILABLE_RETRY_INTERVAL = 10
 
+# Maximum time to wait for a notification response (seconds)
+MAX_NOTIFICATION_WAIT_TIME = 2.0
+
 
 def modbus_crc(data: bytes) -> tuple:
     """Calculate the Modbus CRC16 of the given data.
@@ -287,24 +290,44 @@ class RenogyBLEClient:
             if client.is_connected:
                 LOGGER.debug("Connected to device %s", device.name)
 
-                # Subscribe to notifications by defining a handler
+                # Create an event that will be set when notification data is received
+                notification_event = asyncio.Event()
                 notification_data = bytearray()
 
                 def notification_handler(sender, data):
                     notification_data.extend(data)
+                    # Set the event to indicate data has been received
+                    notification_event.set()
 
                 await client.start_notify(RENOGY_READ_CHAR_UUID, notification_handler)
 
                 # Loop through each command and parse them separately
                 for cmd_name, cmd in commands.items():
+                    # Clear the notification data and event before sending new command
+                    notification_data.clear()
+                    notification_event.clear()
+
+                    # Send the command
                     modbus_request = create_modbus_read_request(default_device_id, *cmd)
                     LOGGER.debug(f"{cmd_name} command: {list(modbus_request)}")
                     await client.write_gatt_char(RENOGY_WRITE_CHAR_UUID, modbus_request)
-                    await asyncio.sleep(1)
+
+                    # Wait for notification data with timeout
+                    try:
+                        await asyncio.wait_for(
+                            notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME
+                        )
+                    except asyncio.TimeoutError:
+                        LOGGER.warning(
+                            f"Timeout waiting for {cmd_name} data from device {device.name}"
+                        )
+                        continue
+
+                    # Process the received data
                     result_data = bytes(notification_data)
                     LOGGER.debug(f"Received {cmd_name} data length: {len(result_data)}")
                     LOGGER.debug(f"{cmd_name} data (register {cmd[1]}): {result_data}")
-                    notification_data.clear()
+
                     if device.update_parsed_data(result_data, register=cmd[1]):
                         LOGGER.info(
                             f"Successfully read and parsed {cmd_name} data from device {device.name}"
