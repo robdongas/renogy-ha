@@ -76,7 +76,7 @@ def create_modbus_read_request(
     )
     crc_low, crc_high = modbus_crc(frame)
     frame.extend([crc_low, crc_high])
-    LOGGER.debug("create_request_payload: %s (%s)", register, list(frame))
+    LOGGER.debug(f"create_request_payload: {register} ({list(frame)})")
     return frame
 
 
@@ -139,8 +139,7 @@ class RenogyBLEDevice:
         )
         if datetime.now() >= retry_time:
             LOGGER.info(
-                "Retry interval reached for unavailable device %s. Attempting reconnection...",
-                self.name,
+                f"Retry interval reached for unavailable device {self.name}. Attempting reconnection..."
             )
             # Reset the unavailable time for the next retry interval
             self.last_unavailable_time = datetime.now()
@@ -153,29 +152,22 @@ class RenogyBLEDevice:
         if success:
             if self.failure_count > 0:
                 LOGGER.info(
-                    "Device %s communication restored after %s consecutive failures",
-                    self.name,
-                    self.failure_count,
+                    f"Device {self.name} communication restored after {self.failure_count} consecutive failures"
                 )
             self.failure_count = 0
             if not self.available:
-                LOGGER.info("Device %s is now available", self.name)
+                LOGGER.info(f"Device {self.name} is now available")
                 self.available = True
                 self.last_unavailable_time = None
         else:
             self.failure_count += 1
             LOGGER.warning(
-                "Communication failure with device %s (failure %s of %s)",
-                self.name,
-                self.failure_count,
-                self.max_failures,
+                f"Communication failure with device {self.name} (failure {self.failure_count} of {self.max_failures})"
             )
 
             if self.failure_count >= self.max_failures and self.available:
                 LOGGER.warning(
-                    "Device %s marked unavailable after %s consecutive failures",
-                    self.name,
-                    self.max_failures,
+                    f"Device {self.name} marked unavailable after {self.max_failures} consecutive failures"
                 )
                 self.available = False
                 self.last_unavailable_time = datetime.now()
@@ -183,7 +175,7 @@ class RenogyBLEDevice:
     def update_parsed_data(self, raw_data: bytes, register: int) -> bool:
         """Parse the raw data using the renogy-ble library."""
         if not raw_data:
-            LOGGER.error("No data received from device %s.", self.name)
+            LOGGER.error(f"No data received from device {self.name}.")
             return False
         if not RenogyParser:
             LOGGER.error("RenogyParser library not available. Unable to parse data.")
@@ -196,19 +188,17 @@ class RenogyBLEDevice:
             )  # Placeholder for register
 
             if not parsed:
-                LOGGER.warning("No data parsed from raw data for device %s", self.name)
+                LOGGER.warning(f"No data parsed from raw data for device {self.name}")
                 return False
 
             # Update the stored parsed data
             self.parsed_data.update(parsed)
             LOGGER.debug(
-                "Successfully parsed data for device %s: %s",
-                self.name,
-                self.parsed_data,
+                f"Successfully parsed data for device {self.name}: {self.parsed_data}"
             )
             return True
         except Exception as e:
-            LOGGER.error("Error parsing data for device %s: %s", self.name, str(e))
+            LOGGER.error(f"Error parsing data for device {self.name}: {str(e)}")
             return False
 
 
@@ -247,7 +237,7 @@ class RenogyBLEClient:
             for device in devices:
                 if self.is_renogy_device(device):
                     LOGGER.debug(
-                        "Found Renogy device: %s (%s)", device.name, device.address
+                        f"Found Renogy device: {device.name} ({device.address})"
                     )
 
                     # Either get existing device or create new one
@@ -264,21 +254,20 @@ class RenogyBLEClient:
 
                     renogy_devices.append(renogy_device)
 
-            LOGGER.debug("Found %s Renogy devices", len(renogy_devices))
+            LOGGER.debug(f"Found {len(renogy_devices)} Renogy devices")
             return renogy_devices
         except Exception as e:
-            LOGGER.error("Error scanning for Renogy devices: %s", str(e))
+            LOGGER.error(f"Error scanning for Renogy devices: {str(e)}")
             return []
 
     async def read_device_data(self, device: RenogyBLEDevice) -> bool:
         """Read data from a Renogy BLE device."""
-        LOGGER.debug("Attempting to read data from device: %s", device.name)
+        LOGGER.debug(f"Attempting to read data from device: {device.name}")
 
         # Check if the device is unavailable and we should attempt reconnection
         if not device.is_available and not device.should_retry_connection:
             LOGGER.debug(
-                "Device %s is unavailable and not yet due for retry attempt",
-                device.name,
+                f"Device {device.name} is unavailable and not yet due for retry attempt"
             )
             return False
 
@@ -288,7 +277,7 @@ class RenogyBLEClient:
         try:
             await client.connect()
             if client.is_connected:
-                LOGGER.debug("Connected to device %s", device.name)
+                LOGGER.debug(f"Connected to device {device.name}")
 
                 # Create an event that will be set when notification data is received
                 notification_event = asyncio.Event()
@@ -341,10 +330,10 @@ class RenogyBLEClient:
                 await client.stop_notify(RENOGY_READ_CHAR_UUID)
 
             else:
-                LOGGER.warning("Failed to connect to device %s", device.name)
+                LOGGER.warning(f"Failed to connect to device {device.name}")
 
         except Exception as e:
-            LOGGER.error("Error reading data from device %s: %s", device.name, str(e))
+            LOGGER.error(f"Error reading data from device {device.name}: {str(e)}")
         finally:
             if client.is_connected:
                 await client.disconnect()
@@ -358,7 +347,7 @@ class RenogyBLEClient:
             return
 
         LOGGER.info(
-            "Starting Renogy BLE polling with interval %s seconds", self.scan_interval
+            f"Starting Renogy BLE polling with interval {self.scan_interval} seconds"
         )
         self._running = True
         self._scan_task = asyncio.create_task(self._polling_loop())
@@ -394,10 +383,10 @@ class RenogyBLEClient:
                         try:
                             self.data_callback(device)
                         except Exception as e:
-                            LOGGER.error("Error in data callback: %s", str(e))
+                            LOGGER.error(f"Error in data callback: {str(e)}")
 
             except Exception as e:
-                LOGGER.error("Error in polling loop: %s", str(e))
+                LOGGER.error(f"Error in polling loop: {str(e)}")
 
             # Wait for the next scan interval
             await asyncio.sleep(self.scan_interval)

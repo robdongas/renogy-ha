@@ -122,8 +122,7 @@ class RenogyDataUpdateCoordinator(DataUpdateCoordinator):
     async def start_polling(self) -> None:
         """Start the BLE polling."""
         LOGGER.info(
-            "Starting Renogy BLE polling with scan interval of %s seconds",
-            self.scan_interval,
+            f"Starting Renogy BLE polling with scan interval of {self.scan_interval} seconds"
         )
         await self.ble_client.start_polling()
 
