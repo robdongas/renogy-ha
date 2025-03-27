@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 import async_timeout
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -29,9 +29,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Get configuration from entry
     scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    device_address = entry.data.get(CONF_ADDRESS)
+
+    if not device_address:
+        LOGGER.error("No device address provided in config entry")
+        return False
 
     # Create a coordinator for this entry
-    coordinator = RenogyDataUpdateCoordinator(hass, scan_interval)
+    coordinator = RenogyDataUpdateCoordinator(hass, scan_interval, device_address)
 
     # Store coordinator and devices in hass.data
     hass.data.setdefault(DOMAIN, {})
@@ -68,7 +73,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 class RenogyDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching Renogy BLE data."""
 
-    def __init__(self, hass: HomeAssistant, scan_interval: int) -> None:
+    def __init__(
+        self, hass: HomeAssistant, scan_interval: int, device_address: str
+    ) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
@@ -77,37 +84,40 @@ class RenogyDataUpdateCoordinator(DataUpdateCoordinator):
             # Use HA coordinator's update interval for proper integration with HA's scheduler
             update_interval=timedelta(seconds=scan_interval),
         )
-        # Initialize BLE client with the Home Assistant instance
+        # Initialize BLE client with the Home Assistant instance and specific device address
         self.ble_client = RenogyBLEClient(
             scan_interval=scan_interval,
             data_callback=self._handle_device_data,
             hass=hass,  # Pass the hass instance to use HA bluetooth APIs
+            device_address=device_address,  # Only track the specific device
         )
         self.devices: Dict[str, RenogyBLEDevice] = {}
         self.scan_interval = scan_interval
+        self.device_address = device_address
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from BLE devices.
 
         This method is called by DataUpdateCoordinator on the update interval.
-        Instead of directly fetching data here, we delegate to the BLE client's
-        polling mechanism, but occasionally trigger a scan to discover new devices.
+        It only processes the specific device configured for this entry.
         """
         try:
             async with async_timeout.timeout(self.scan_interval * 0.8):
-                # We rely more on the registered Bluetooth callbacks for device discovery now
-                # but still periodically check for any missed devices
-                if not self.devices or self.update_interval.total_seconds() >= 60:
-                    LOGGER.debug(
-                        "Checking for Renogy BLE devices via HA Bluetooth integration"
-                    )
-                    devices = await self.ble_client.scan_for_devices()
-                    for device in devices:
-                        if device.address not in self.devices:
-                            LOGGER.info(
-                                f"Discovered Renogy device: {device.name} ({device.address})"
-                            )
-                            self.devices[device.address] = device
+                # We're only interested in the specific device for this entry
+                LOGGER.debug(f"Checking for Renogy BLE device {self.device_address}")
+                device = await self.ble_client.get_device_by_address(
+                    self.device_address
+                )
+
+                if device:
+                    if device.address not in self.devices:
+                        LOGGER.info(
+                            f"Tracking Renogy device: {device.name} ({device.address})"
+                        )
+                        self.devices[device.address] = device
+
+                    # Process the device data
+                    await self.ble_client._process_device(device)
 
                 # Return the current data - actual updates happen via the callback
                 return {
@@ -127,12 +137,19 @@ class RenogyDataUpdateCoordinator(DataUpdateCoordinator):
     async def start_polling(self) -> None:
         """Start the BLE polling."""
         LOGGER.info(
-            f"Starting Renogy BLE polling with scan interval of {self.scan_interval} seconds"
+            f"Starting Renogy BLE polling for device {self.device_address} with scan interval of {self.scan_interval} seconds"
         )
         await self.ble_client.start_polling()
 
     def _handle_device_data(self, device: RenogyBLEDevice) -> None:
         """Handle updated data from a device."""
+        # Only process data for our specific device
+        if device.address != self.device_address:
+            LOGGER.debug(
+                f"Ignoring update from non-tracked device: {device.name} ({device.address})"
+            )
+            return
+
         LOGGER.debug(f"Received update from device: {device.name} ({device.address})")
 
         # Register or update the device in our device registry

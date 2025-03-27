@@ -195,31 +195,76 @@ class RenogyBLEDevice:
                 self.available = False
                 self.last_unavailable_time = datetime.now()
 
-    def update_parsed_data(self, raw_data: bytes, register: int) -> bool:
-        """Parse the raw data using the renogy-ble library."""
+    def update_parsed_data(
+        self, raw_data: bytes, register: int, cmd_name: str = "unknown"
+    ) -> bool:
+        """Parse the raw data using the renogy-ble library.
+
+        Args:
+            raw_data: The raw data received from the device
+            register: The register address this data corresponds to
+            cmd_name: The name of the command (for logging purposes)
+
+        Returns:
+            True if parsing was successful (even partially), False otherwise
+        """
         if not raw_data:
-            LOGGER.error(f"No data received from device {self.name}.")
+            LOGGER.error(
+                f"No data received from device {self.name} for command {cmd_name}."
+            )
             return False
+
         if not RenogyParser:
             LOGGER.error("RenogyParser library not available. Unable to parse data.")
             return False
 
         try:
+            # Check for minimum valid response length
+            # Modbus response format: device_id(1) + function_code(1) + byte_count(1) + data(n) + crc(2)
+            if (
+                len(raw_data) < 5
+            ):  # At minimum, we need these 5 bytes for a valid response
+                LOGGER.warning(
+                    f"Response too short for {cmd_name}: {len(raw_data)} bytes. Raw data: {raw_data.hex()}"
+                )
+                return False
+
+            # Basic validation of Modbus response
+            function_code = raw_data[1] if len(raw_data) > 1 else 0
+            if function_code & 0x80:  # Error response
+                error_code = raw_data[2] if len(raw_data) > 2 else 0
+                LOGGER.error(
+                    f"Modbus error in {cmd_name} response: function code {function_code}, error code {error_code}"
+                )
+                return False
+
             # Parse the raw data using the renogy-ble library
+            # The parser will handle partial data and log appropriate warnings
             parsed = RenogyParser.parse(raw_data, self.model, register)
 
             if not parsed:
-                LOGGER.warning(f"No data parsed from raw data for device {self.name}")
+                LOGGER.warning(
+                    f"No data parsed from {cmd_name} response (register {register}). Length: {len(raw_data)}"
+                )
                 return False
 
-            # Update the stored parsed data
+            # Update the stored parsed data with whatever we could get
             self.parsed_data.update(parsed)
+
+            # Log the successful parsing
             LOGGER.debug(
-                f"Successfully parsed data for device {self.name}: {self.parsed_data}"
+                f"Successfully parsed {cmd_name} data from device {self.name}: {parsed}"
             )
             return True
+
         except Exception as e:
-            LOGGER.error(f"Error parsing data for device {self.name}: {str(e)}")
+            LOGGER.error(
+                f"Error parsing {cmd_name} data from device {self.name}: {str(e)}"
+            )
+            # Log additional debug info to help diagnose the issue
+            LOGGER.debug(
+                f"Raw data for {cmd_name} (register {register}): {raw_data.hex() if raw_data else 'None'}, Length: {len(raw_data) if raw_data else 0}"
+            )
             return False
 
 
@@ -231,6 +276,7 @@ class RenogyBLEClient:
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
         data_callback: Optional[Callable[[RenogyBLEDevice], None]] = None,
         hass=None,
+        device_address: Optional[str] = None,
     ):
         """Initialize the BLE client."""
         self.discovered_devices: Dict[str, RenogyBLEDevice] = {}
@@ -243,6 +289,7 @@ class RenogyBLEClient:
         self.hass = hass
         self._unload_callbacks: List[Callable] = []
         self._discovered_addresses: Set[str] = set()
+        self.device_address = device_address  # Track specific device address
 
     def is_renogy_device(self, device: BLEDevice) -> bool:
         """Check if a BLE device is a Renogy device by examining its name."""
@@ -261,53 +308,89 @@ class RenogyBLEClient:
             service_infos = bluetooth.async_discovered_service_info(self.hass)
 
             for service_info in service_infos:
-                if service_info.name and service_info.name.startswith(RENOGY_BT_PREFIX):
-                    LOGGER.debug(
-                        f"Found Renogy device: {service_info.name} ({service_info.address})"
+                # Skip devices that don't match our criteria
+                if not service_info.name or not service_info.name.startswith(
+                    RENOGY_BT_PREFIX
+                ):
+                    continue
+
+                # If we have a specific device address, only process that one
+                if self.device_address and service_info.address != self.device_address:
+                    continue
+
+                LOGGER.debug(
+                    f"Found Renogy device: {service_info.name} ({service_info.address})"
+                )
+
+                # Either get existing device or create new one
+                if service_info.address in self.discovered_devices:
+                    renogy_device = self.discovered_devices[service_info.address]
+                    # Get an updated BLEDevice from HA
+                    ble_device = bluetooth.async_ble_device_from_address(
+                        self.hass, service_info.address, connectable=True
                     )
+                    if ble_device:
+                        renogy_device.ble_device = ble_device
+                        renogy_device.rssi = ble_device.rssi
+                        renogy_device.last_seen = datetime.now()
+                else:
+                    # Get a BLEDevice from HA
+                    ble_device = bluetooth.async_ble_device_from_address(
+                        self.hass, service_info.address, connectable=True
+                    )
+                    if ble_device:
+                        renogy_device = RenogyBLEDevice(ble_device)
+                        self.discovered_devices[service_info.address] = renogy_device
 
-                    # Either get existing device or create new one
-                    if service_info.address in self.discovered_devices:
-                        renogy_device = self.discovered_devices[service_info.address]
-                        # Get an updated BLEDevice from HA
-                        ble_device = bluetooth.async_ble_device_from_address(
-                            self.hass, service_info.address, connectable=True
-                        )
-                        if ble_device:
-                            renogy_device.ble_device = ble_device
-                            renogy_device.rssi = ble_device.rssi
-                            renogy_device.last_seen = datetime.now()
-                    else:
-                        # Get a BLEDevice from HA
-                        ble_device = bluetooth.async_ble_device_from_address(
-                            self.hass, service_info.address, connectable=True
-                        )
-                        if ble_device:
-                            renogy_device = RenogyBLEDevice(ble_device)
-                            self.discovered_devices[service_info.address] = (
-                                renogy_device
-                            )
+                        # Register for unavailable notifications
+                        if service_info.address not in self._discovered_addresses:
+                            self._register_unavailable_tracking(service_info.address)
+                            self._discovered_addresses.add(service_info.address)
 
-                            # Register for unavailable notifications
-                            if service_info.address not in self._discovered_addresses:
-                                self._register_unavailable_tracking(
-                                    service_info.address
-                                )
-                                self._discovered_addresses.add(service_info.address)
+                if service_info.address in self.discovered_devices:
+                    renogy_devices.append(self.discovered_devices[service_info.address])
 
-                    if service_info.address in self.discovered_devices:
-                        renogy_devices.append(
-                            self.discovered_devices[service_info.address]
-                        )
-
-            LOGGER.debug(f"Found {len(renogy_devices)} Renogy devices")
+            LOGGER.debug(f"Found {len(renogy_devices)} matching Renogy devices")
         else:
             LOGGER.error("Home Assistant instance not available for Bluetooth scanning")
 
         return renogy_devices
 
+    async def get_device_by_address(self, address: str) -> Optional[RenogyBLEDevice]:
+        """Get a specific device by address."""
+        if address in self.discovered_devices:
+            return self.discovered_devices[address]
+
+        # Try to find the device
+        if self.hass:
+            service_info = bluetooth.async_last_service_info(self.hass, address)
+            if (
+                service_info
+                and service_info.name
+                and service_info.name.startswith(RENOGY_BT_PREFIX)
+            ):
+                ble_device = bluetooth.async_ble_device_from_address(
+                    self.hass, address, connectable=True
+                )
+                if ble_device:
+                    renogy_device = RenogyBLEDevice(ble_device)
+                    self.discovered_devices[address] = renogy_device
+
+                    # Register for unavailable tracking
+                    if address not in self._discovered_addresses:
+                        self._register_unavailable_tracking(address)
+                        self._discovered_addresses.add(address)
+
+                    return renogy_device
+
+        return None
+
     def _register_unavailable_tracking(self, address: str) -> None:
         """Register for unavailable notifications from Home Assistant."""
+        # Skip if we only care about a specific device that's not this one
+        if self.device_address and address != self.device_address:
+            return
+
         if not self.hass:
             return
 
@@ -339,6 +422,10 @@ class RenogyBLEClient:
             change: bluetooth.BluetoothChange,
         ) -> None:
             """Handle a discovered Bluetooth device."""
+            # If we only care about a specific device, ignore others
+            if self.device_address and service_info.address != self.device_address:
+                return
+
             if (
                 service_info.name
                 and service_info.name.startswith(RENOGY_BT_PREFIX)
@@ -364,16 +451,22 @@ class RenogyBLEClient:
                     # Process this device immediately instead of waiting for next scan
                     asyncio.create_task(self._process_device(renogy_device))
 
-        # Register for Bluetooth discovery callbacks
+        # Register for Bluetooth discovery callbacks with filter for our specific device if needed
+        matcher = {"local_name": f"{RENOGY_BT_PREFIX}*"}
+        if self.device_address:
+            matcher = {"address": self.device_address}
+
         unload_callback = bluetooth.async_register_callback(
             self.hass,
             _async_discovered_device,
-            {"local_name": f"{RENOGY_BT_PREFIX}*"},
+            matcher,
             BluetoothScanningMode.ACTIVE,
         )
 
         self._unload_callbacks.append(unload_callback)
-        LOGGER.debug("Registered for Renogy device discovery callbacks")
+        LOGGER.debug(
+            f"Registered for Renogy device discovery callbacks with matcher: {matcher}"
+        )
 
     async def read_device_data(self, device: RenogyBLEDevice) -> bool:
         """Read data from a Renogy BLE device."""
@@ -397,6 +490,7 @@ class RenogyBLEClient:
 
         success = False
         client = BleakClient(device.ble_device)
+        any_command_succeeded = False
 
         try:
             await client.connect()
@@ -439,19 +533,29 @@ class RenogyBLEClient:
                     # Process the received data
                     result_data = bytes(notification_data)
                     LOGGER.debug(f"Received {cmd_name} data length: {len(result_data)}")
-                    LOGGER.debug(f"{cmd_name} data (register {cmd[1]}): {result_data}")
+                    LOGGER.debug(
+                        f"{cmd_name} data (register {cmd[1]}): {result_data.hex()}"
+                    )
 
-                    if device.update_parsed_data(result_data, register=cmd[1]):
+                    # Try to parse this command's data
+                    cmd_success = device.update_parsed_data(
+                        result_data, register=cmd[1], cmd_name=cmd_name
+                    )
+
+                    if cmd_success:
                         LOGGER.info(
                             f"Successfully read and parsed {cmd_name} data from device {device.name}"
                         )
-                        success = True
+                        any_command_succeeded = True
                     else:
                         LOGGER.warning(
-                            f"Failed to parse data from device {device.name}"
+                            f"Failed to parse {cmd_name} data from device {device.name}"
                         )
 
                 await client.stop_notify(RENOGY_READ_CHAR_UUID)
+
+                # Consider the overall operation successful if at least one command was parsed
+                success = any_command_succeeded
 
             else:
                 LOGGER.warning(f"Failed to connect to device {device.name}")
@@ -460,7 +564,14 @@ class RenogyBLEClient:
             LOGGER.error(f"Error reading data from device {device.name}: {str(e)}")
         finally:
             if client and client.is_connected:
-                await client.disconnect()
+                try:
+                    await client.disconnect()
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Error disconnecting from device {device.name}: {str(e)}"
+                    )
+
+            # Update device availability, but count it as a success if any command worked
             device.update_availability(success)
             return success
 
@@ -519,11 +630,16 @@ class RenogyBLEClient:
         """Main polling loop."""
         while self._running:
             try:
-                devices = await self.scan_for_devices()
-
-                # Process each discovered device
-                for device in devices:
-                    await self._process_device(device)
+                if self.device_address:
+                    # Only get the specific device we're tracking
+                    device = await self.get_device_by_address(self.device_address)
+                    if device:
+                        await self._process_device(device)
+                else:
+                    # Process all discovered devices
+                    devices = await self.scan_for_devices()
+                    for device in devices:
+                        await self._process_device(device)
 
             except Exception as e:
                 LOGGER.error(f"Error in polling loop: {str(e)}")
