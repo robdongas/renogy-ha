@@ -117,6 +117,24 @@ class RenogyBLEDevice:
         # Track when device was last marked as unavailable
         self.last_unavailable_time: Optional[datetime] = None
 
+    async def update(self) -> None:
+        """Perform a simple connectivity check."""
+        from bleak import BleakClient
+
+        client = BleakClient(self.ble_device)
+        try:
+            await client.connect()
+        finally:
+            try:
+                await client.disconnect()
+            except EOFError:
+                # Suppress EOFError from dbus_fast disconnect
+                pass
+
+    async def stop(self) -> None:
+        """Placeholder stop method to satisfy the config flow."""
+        pass
+
     @property
     def is_available(self) -> bool:
         """Return True if device is available."""
