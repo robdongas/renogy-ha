@@ -5,19 +5,31 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-from bleak_retry_connector import BLEAK_EXCEPTIONS
-from bluetooth_data_tools import human_readable_name
 from homeassistant import config_entries
+from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
-    async_discovered_service_info,
 )
-from homeassistant.const import CONF_ADDRESS
+from homeassistant.const import CONF_ADDRESS, CONF_SCAN_INTERVAL
 from homeassistant.data_entry_flow import FlowResult
 
-from custom_components.renogy_ha.ble import RenogyBLEDevice
+from .const import (
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    LOGGER,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
+    RENOGY_BT_PREFIX,
+)
 
-from .const import DOMAIN, LOGGER
+CONFIG_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
+            vol.Coerce(int),
+            vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+        ),
+    }
+)
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -27,99 +39,134 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-        self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered_devices: dict[str, BluetoothServiceInfoBleak] = {}
+        self._discovered_device: BluetoothServiceInfoBleak | None = None
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> FlowResult:
         """Handle the bluetooth discovery step."""
+        # Check if this is a Renogy device based on the name
+        if not discovery_info.name or not discovery_info.name.startswith(
+            RENOGY_BT_PREFIX
+        ):
+            return self.async_abort(reason="not_supported_device")
 
+        LOGGER.debug(
+            f"Bluetooth auto-discovery for Renogy device: {discovery_info.name}"
+        )
+
+        # Set unique ID based on device address
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
-        self._discovery_info = discovery_info
+
+        # Store the discovered device for later
+        self._discovered_device = discovery_info
+
+        # Set title to user-readable name
         self.context["title_placeholders"] = {
-            "name": human_readable_name(
-                None, discovery_info.name, discovery_info.address
-            )
+            "name": discovery_info.name,
+            "address": discovery_info.address,
         }
+
+        # Proceed to configuration options
         return await self.async_step_user()
-
-    # async def async_step_user(
-    #     self, user_input: dict[str, str] | None = None
-    # ) -> FlowResult:
-    #     """Handle the initial step."""
-    #     if user_input is None:
-    #         return self.async_show_form(
-    #             step_id="user",
-    #             data_schema=CONFIG_SCHEMA,
-    #             description_placeholders={"default_interval": DEFAULT_SCAN_INTERVAL},
-    #         )
-
-    #     # Only allow one instance of the integration
-    #     await self.async_set_unique_id(DOMAIN)
-    #     self._abort_if_unique_id_mismatch()
-
-    #     return self.async_create_entry(
-    #         title="Renogy BLE",
-    #         data=user_input,
-    #     )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the user step to pick discovered device."""
+        """Handle the user step to pick discovered device or configure options."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            address = user_input[CONF_ADDRESS]
-            discovery_info = self._discovered_devices[address]
-            local_name = discovery_info.name
-            await self.async_set_unique_id(
-                discovery_info.address, raise_on_progress=False
-            )
-            self._abort_if_unique_id_configured()
-            device = RenogyBLEDevice(discovery_info.device)
-            try:
-                await device.update()
-            except BLEAK_EXCEPTIONS:
-                errors["base"] = "cannot_connect"
-            except Exception:  # pylint: disable=broad-except
-                LOGGER.exception("Unexpected error")
-                errors["base"] = "unknown"
-            else:
-                await device.stop()
+            if self._discovered_device:
+                # Coming from bluetooth discovery with device already selected
+                address = self._discovered_device.address
+                user_input[CONF_ADDRESS] = address
+
+                # Create a config entry
                 return self.async_create_entry(
-                    title=local_name, data={CONF_ADDRESS: discovery_info.address}
+                    title=self._discovered_device.name,
+                    data=user_input,
+                )
+            elif CONF_ADDRESS in user_input:
+                # Manual device selection
+                address = user_input[CONF_ADDRESS]
+                discovery_info = self._discovered_devices[address]
+
+                await self.async_set_unique_id(address, raise_on_progress=False)
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=discovery_info.name,
+                    data=user_input,
                 )
 
-        if discovery := self._discovery_info:
-            self._discovered_devices[discovery.address] = discovery
-        else:
-            current_addresses = self._async_current_ids()
-            for discovery in async_discovered_service_info(self.hass):
-                if (
-                    discovery.address in current_addresses
-                    or discovery.address in self._discovered_devices
-                ):
-                    continue
-                self._discovered_devices[discovery.address] = discovery
+        # If we have a discovered device from bluetooth auto-discovery,
+        # just show config options (scan interval, etc)
+        if self._discovered_device:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=CONFIG_SCHEMA,
+                description_placeholders={
+                    "device_name": self._discovered_device.name,
+                    "default_interval": DEFAULT_SCAN_INTERVAL,
+                },
+                errors=errors,
+            )
+
+        # Otherwise, scan for available devices to let the user pick one
+        await self._async_discover_devices()
 
         if not self._discovered_devices:
             return self.async_abort(reason="no_devices_found")
 
-        data_schema = vol.Schema(
+        # Show form to select a discovered device
+        address_schema = vol.Schema(
             {
                 vol.Required(CONF_ADDRESS): vol.In(
                     {
-                        service_info.address: (
-                            f"{service_info.name} ({service_info.address})"
-                        )
-                        for service_info in self._discovered_devices.values()
+                        address: f"{info.name} ({address})"
+                        for address, info in self._discovered_devices.items()
                     }
+                ),
+                vol.Optional(
+                    CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
                 ),
             }
         )
+
         return self.async_show_form(
-            step_id="user", data_schema=data_schema, errors=errors
+            step_id="user",
+            data_schema=address_schema,
+            errors=errors,
+        )
+
+    async def _async_discover_devices(self) -> None:
+        """Discover Bluetooth devices."""
+        LOGGER.debug("Scanning for Renogy BLE devices")
+
+        self._discovered_devices = {}
+
+        for discovery_info in bluetooth.async_discovered_service_info(self.hass):
+            # Skip devices that don't match our pattern
+            if not discovery_info.name or not discovery_info.name.startswith(
+                RENOGY_BT_PREFIX
+            ):
+                continue
+
+            # Skip devices that are already configured
+            address = discovery_info.address
+            if address in self._async_current_ids():
+                continue
+
+            # Add to list of discovered devices
+            self._discovered_devices[address] = discovery_info
+            LOGGER.debug(f"Found Renogy device: {discovery_info.name} ({address})")
+
+        LOGGER.debug(
+            f"Found {len(self._discovered_devices)} unconfigured Renogy devices"
         )

@@ -77,9 +77,11 @@ class RenogyDataUpdateCoordinator(DataUpdateCoordinator):
             # Use HA coordinator's update interval for proper integration with HA's scheduler
             update_interval=timedelta(seconds=scan_interval),
         )
+        # Initialize BLE client with the Home Assistant instance
         self.ble_client = RenogyBLEClient(
             scan_interval=scan_interval,
             data_callback=self._handle_device_data,
+            hass=hass,  # Pass the hass instance to use HA bluetooth APIs
         )
         self.devices: Dict[str, RenogyBLEDevice] = {}
         self.scan_interval = scan_interval
@@ -93,14 +95,17 @@ class RenogyDataUpdateCoordinator(DataUpdateCoordinator):
         """
         try:
             async with async_timeout.timeout(self.scan_interval * 0.8):
-                # Initiate a scan for devices if we don't have any yet or periodically
+                # We rely more on the registered Bluetooth callbacks for device discovery now
+                # but still periodically check for any missed devices
                 if not self.devices or self.update_interval.total_seconds() >= 60:
-                    LOGGER.debug("Scanning for new Renogy BLE devices")
+                    LOGGER.debug(
+                        "Checking for Renogy BLE devices via HA Bluetooth integration"
+                    )
                     devices = await self.ble_client.scan_for_devices()
                     for device in devices:
                         if device.address not in self.devices:
                             LOGGER.info(
-                                f"Discovered new Renogy device: {device.name} ({device.address})"
+                                f"Discovered Renogy device: {device.name} ({device.address})"
                             )
                             self.devices[device.address] = device
 
