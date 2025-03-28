@@ -128,7 +128,7 @@ async def update_device_registry(
                 device_entry.id, name=device.name, model=model
             )
         else:
-            LOGGER.warning(f"Device {device.address} not found in registry for update")
+            LOGGER.info(f"Device {device.address} not found in registry for update")
     except Exception as e:
         LOGGER.error(f"Error updating device in registry: {e}")
 
