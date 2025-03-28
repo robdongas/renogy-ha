@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-from typing import Any, Dict
-
-import async_timeout
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import async_get as async_get_device_registry
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
 from .const import (
+    ATTR_MODEL,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -109,8 +105,6 @@ async def update_device_registry(
 ) -> None:
     """Update device in registry."""
     try:
-        from .const import ATTR_MANUFACTURER, ATTR_MODEL
-
         device_registry = async_get_device_registry(hass)
         model = (
             device.parsed_data.get("model", ATTR_MODEL)
