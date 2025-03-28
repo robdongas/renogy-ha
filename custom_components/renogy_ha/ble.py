@@ -389,14 +389,22 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         return result
 
+    def _async_cancel_bluetooth_subscription(self) -> None:
+        """Cancel the bluetooth subscription."""
+        if hasattr(self, "_unsubscribe_bluetooth") and self._unsubscribe_bluetooth:
+            self._unsubscribe_bluetooth()
+            self._unsubscribe_bluetooth = None
+
     def async_stop(self) -> None:
         """Stop polling."""
         if self._unsub_refresh:
             self._unsub_refresh()
             self._unsub_refresh = None
 
-        # Call the parent class's stop method
-        super().async_stop()
+        self._async_cancel_bluetooth_subscription()
+
+        # Clean up any other resources that might need to be released
+        self._listeners = []
 
     @callback
     def _needs_poll(
