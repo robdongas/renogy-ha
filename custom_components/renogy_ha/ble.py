@@ -561,7 +561,14 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                 self.logger.debug(
                                     f"Disconnected from device {device.name}"
                                 )
+                            except EOFError:
+                                # EOFError is common when the connection was already closed by the device
+                                # This is not a critical error, just log as debug
+                                self.logger.debug(
+                                    f"Connection already closed when disconnecting from device {device.name}"
+                                )
                             except Exception as e:
+                                # Only log other exceptions as warnings
                                 self.logger.warning(
                                     f"Error disconnecting from device {device.name}: {e!r}"
                                 )
