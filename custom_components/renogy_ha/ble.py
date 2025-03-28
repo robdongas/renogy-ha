@@ -591,6 +591,16 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     self.data = dict(device.parsed_data)
                     self.logger.debug(f"Updated coordinator data: {self.data}")
 
+                    # Check if we've discovered the model and validate it against supported models
+                    if "model" in device.parsed_data:
+                        device_model = device.parsed_data["model"]
+                        device.model = device_model
+                        self.logger.info(f"Detected device model: {device_model}")
+
+                    # Return model information in data for config validation
+                    if hasattr(device, "model") and device.model:
+                        self.data["model"] = device.model
+
                 return success
             finally:
                 self._connection_in_progress = False

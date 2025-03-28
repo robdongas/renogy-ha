@@ -20,3 +20,7 @@ CONF_SCAN_INTERVAL = "scan_interval"
 # Device info
 ATTR_MANUFACTURER = "Renogy"
 ATTR_MODEL = "Rover"
+
+# List of supported Renogy device models
+# Currently we only support the Renogy Rover controller
+SUPPORTED_MODELS = ["RNG-CTRL-RVR"]
