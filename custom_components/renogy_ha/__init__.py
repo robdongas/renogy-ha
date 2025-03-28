@@ -9,9 +9,10 @@ import async_timeout
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import async_get as async_get_device_registry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .ble import RenogyBLEClient, RenogyBLEDevice
+from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
 from .const import (
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
@@ -25,7 +26,7 @@ PLATFORMS = [Platform.SENSOR]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Renogy BLE from a config entry."""
-    LOGGER.debug("Setting up Renogy BLE integration")
+    LOGGER.info(f"Setting up Renogy BLE integration with entry {entry.entry_id}")
 
     # Get configuration from entry
     scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -35,141 +36,118 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         LOGGER.error("No device address provided in config entry")
         return False
 
+    LOGGER.info(
+        f"Configuring Renogy BLE device {device_address} with scan interval {scan_interval}s"
+    )
+
     # Create a coordinator for this entry
-    coordinator = RenogyDataUpdateCoordinator(hass, scan_interval, device_address)
+    coordinator = RenogyActiveBluetoothCoordinator(
+        hass=hass,
+        logger=LOGGER,
+        address=device_address,
+        scan_interval=scan_interval,
+        device_data_callback=lambda device: hass.async_create_task(
+            _handle_device_update(hass, entry, device)
+        ),
+    )
 
     # Store coordinator and devices in hass.data
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
         "devices": [],  # Will be populated as devices are discovered
+        "initialized_devices": set(),  # Track which devices have entities
     }
 
-    # Start the coordinator
-    await coordinator.async_config_entry_first_refresh()
-
     # Forward entry setup to sensor platform
+    LOGGER.info(f"Setting up sensor platform for Renogy BLE device {device_address}")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Start the coordinator after all platforms are set up
+    # This ensures all entities have had a chance to subscribe to the coordinator
+    LOGGER.info(f"Starting coordinator for Renogy BLE device {device_address}")
+    entry.async_on_unload(coordinator.async_start())
+
+    # Force an immediate refresh
+    LOGGER.info(f"Requesting initial refresh for Renogy BLE device {device_address}")
+    hass.async_create_task(coordinator.async_request_refresh())
 
     return True
 
 
+async def _handle_device_update(
+    hass: HomeAssistant, entry: ConfigEntry, device: RenogyBLEDevice
+) -> None:
+    """Handle device update callback."""
+    LOGGER.info(f"Device update for {device.name} ({device.address})")
+
+    # Make sure the device is in our registry
+    if entry.entry_id in hass.data[DOMAIN]:
+        entry_data = hass.data[DOMAIN][entry.entry_id]
+        devices_list = entry_data.get("devices", [])
+
+        # Check if device is already in list by address
+        device_addresses = [d.address for d in devices_list]
+        if device.address not in device_addresses:
+            LOGGER.info(f"Adding device {device.name} to registry")
+            devices_list.append(device)
+
+            # Log the parsed data for debugging
+            if device.parsed_data:
+                LOGGER.debug(f"Device data: {device.parsed_data}")
+            else:
+                LOGGER.warning(f"No parsed data for device {device.name}")
+
+        # Update the device name in the Home Assistant device registry
+        # This will ensure the device name is updated in the UI
+        if device.name != "Unknown Renogy Device" and not device.name.startswith(
+            "Unknown"
+        ):
+            hass.async_create_task(update_device_registry(hass, entry, device))
+
+
+async def update_device_registry(
+    hass: HomeAssistant, entry: ConfigEntry, device: RenogyBLEDevice
+) -> None:
+    """Update device in registry."""
+    try:
+        from .const import ATTR_MANUFACTURER, ATTR_MODEL
+
+        device_registry = async_get_device_registry(hass)
+        model = (
+            device.parsed_data.get("model", ATTR_MODEL)
+            if device.parsed_data
+            else ATTR_MODEL
+        )
+
+        # Find the device in the registry using the domain and device address
+        device_entry = device_registry.async_get_device({(DOMAIN, device.address)})
+
+        if device_entry:
+            # Update the device name
+            LOGGER.info(f"Updating device registry entry with real name: {device.name}")
+            device_registry.async_update_device(
+                device_entry.id, name=device.name, model=model
+            )
+        else:
+            LOGGER.warning(f"Device {device.address} not found in registry for update")
+    except Exception as e:
+        LOGGER.error(f"Error updating device in registry: {e}")
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    LOGGER.info(f"Unloading Renogy BLE integration for {entry.entry_id}")
+
     # Unload platforms
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    if unload_ok:
-        # Stop the BLE client
+    if unload_ok and entry.entry_id in hass.data[DOMAIN]:
+        # Stop the coordinator
         coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-        await coordinator.ble_client.stop_polling()
+        coordinator.async_stop()
 
         # Remove entry from hass.data
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
-
-
-class RenogyDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching Renogy BLE data."""
-
-    def __init__(
-        self, hass: HomeAssistant, scan_interval: int, device_address: str
-    ) -> None:
-        """Initialize the coordinator."""
-        super().__init__(
-            hass,
-            LOGGER,
-            name=DOMAIN,
-            # Use HA coordinator's update interval for proper integration with HA's scheduler
-            update_interval=timedelta(seconds=scan_interval),
-        )
-        # Initialize BLE client with the Home Assistant instance and specific device address
-        self.ble_client = RenogyBLEClient(
-            scan_interval=scan_interval,
-            data_callback=self._handle_device_data,
-            hass=hass,  # Pass the hass instance to use HA bluetooth APIs
-            device_address=device_address,  # Only track the specific device
-        )
-        self.devices: Dict[str, RenogyBLEDevice] = {}
-        self.scan_interval = scan_interval
-        self.device_address = device_address
-
-    async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from BLE devices.
-
-        This method is called by DataUpdateCoordinator on the update interval.
-        It only processes the specific device configured for this entry.
-        """
-        try:
-            async with async_timeout.timeout(self.scan_interval * 0.8):
-                # We're only interested in the specific device for this entry
-                LOGGER.debug(f"Checking for Renogy BLE device {self.device_address}")
-                device = await self.ble_client.get_device_by_address(
-                    self.device_address
-                )
-
-                if device:
-                    if device.address not in self.devices:
-                        LOGGER.info(
-                            f"Tracking Renogy device: {device.name} ({device.address})"
-                        )
-                        self.devices[device.address] = device
-
-                    # Process the device data
-                    await self.ble_client._process_device(device)
-
-                # Return the current data - actual updates happen via the callback
-                return {
-                    addr: device.parsed_data
-                    for addr, device in self.devices.items()
-                    if device.parsed_data
-                }
-        except Exception as err:
-            LOGGER.error(f"Error fetching Renogy BLE data: {err}")
-            # Return last known good data
-            return {
-                addr: device.parsed_data
-                for addr, device in self.devices.items()
-                if device.parsed_data
-            }
-
-    async def start_polling(self) -> None:
-        """Start the BLE polling."""
-        LOGGER.info(
-            f"Starting Renogy BLE polling for device {self.device_address} with scan interval of {self.scan_interval} seconds"
-        )
-        await self.ble_client.start_polling()
-
-    def _handle_device_data(self, device: RenogyBLEDevice) -> None:
-        """Handle updated data from a device."""
-        # Only process data for our specific device
-        if device.address != self.device_address:
-            LOGGER.debug(
-                f"Ignoring update from non-tracked device: {device.name} ({device.address})"
-            )
-            return
-
-        LOGGER.debug(f"Received update from device: {device.name} ({device.address})")
-
-        # Register or update the device in our device registry
-        self.devices[device.address] = device
-
-        # Find all entries in hass.data[DOMAIN] that could contain this device
-        for entry_id, entry_data in self.hass.data[DOMAIN].items():
-            devices_list = entry_data.get("devices", [])
-
-            # Check if device is already in list by address
-            device_addresses = [d.address for d in devices_list]
-            if device.address not in device_addresses:
-                LOGGER.debug(f"Registering device {device.name} with Home Assistant")
-                devices_list.append(device)
-
-        # Trigger an update for all entities using this coordinator
-        LOGGER.debug(f"Updating entities for device {device.name}")
-        self.async_set_updated_data(
-            {addr: d.parsed_data for addr, d in self.devices.items() if d.parsed_data}
-        )
-
-        # Mark device as successfully updated
-        LOGGER.debug(f"Device {device.name} update processed")
