@@ -46,9 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         logger=LOGGER,
         address=device_address,
         scan_interval=scan_interval,
-        device_data_callback=lambda device: hass.async_create_task(
-            _handle_device_update(hass, entry, device)
-        ),
+        device_data_callback=lambda device: _handle_device_update(hass, entry, device),
     )
 
     # Store coordinator and devices in hass.data
@@ -103,7 +101,7 @@ async def _handle_device_update(
         if device.name != "Unknown Renogy Device" and not device.name.startswith(
             "Unknown"
         ):
-            hass.async_create_task(update_device_registry(hass, entry, device))
+            await update_device_registry(hass, entry, device)
 
 
 async def update_device_registry(

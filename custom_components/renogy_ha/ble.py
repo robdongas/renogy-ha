@@ -598,7 +598,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             # Call the callback if available
             if self.device_data_callback:
                 try:
-                    self.hass.async_create_task(self.device_data_callback(self.device))
+                    await self.device_data_callback(self.device)
                 except Exception as e:
                     self.logger.error(f"Error in device data callback: {str(e)}")
 
