@@ -17,6 +17,7 @@ from homeassistant.components.bluetooth.active_update_coordinator import (
     ActiveBluetoothDataUpdateCoordinator,
 )
 from homeassistant.core import CoreState, HomeAssistant, callback
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     DEFAULT_SCAN_INTERVAL,
@@ -353,8 +354,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             self._unsub_refresh = None
 
         # Schedule the next refresh based on our scan interval
-        self._unsub_refresh = self.hass.helpers.event.async_track_time_interval(
-            self._handle_refresh_interval, self.update_interval
+        self._unsub_refresh = async_track_time_interval(
+            self.hass, self._handle_refresh_interval, self.update_interval
         )
         self.logger.debug(f"Scheduled next refresh in {self.scan_interval} seconds")
 
@@ -562,7 +563,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                 )
                             except Exception as e:
                                 self.logger.warning(
-                                    f"Error disconnecting from device {device.name}: {str(e)}"
+                                    f"Error disconnecting from device {device.name}: {e!r}"
                                 )
 
                 device.update_availability(success)
