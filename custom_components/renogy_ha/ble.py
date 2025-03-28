@@ -107,12 +107,13 @@ commands = {
 class RenogyBLEDevice:
     """Representation of a Renogy BLE device."""
 
-    def __init__(self, ble_device: BLEDevice):
+    def __init__(self, ble_device: BLEDevice, advertisement_rssi: Optional[int] = None):
         """Initialize the Renogy BLE device."""
         self.ble_device = ble_device
         self.address = ble_device.address
         self.name = ble_device.name or "Unknown Renogy Device"
-        self.rssi = ble_device.rssi
+        # Use the provided advertisement RSSI if available, otherwise set to None
+        self.rssi = advertisement_rssi
         self.last_seen = datetime.now()
         # To store last received data
         self.data: Optional[Dict[str, Any]] = None
@@ -450,7 +451,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     self.logger.info(
                         f"Creating new RenogyBLEDevice for {service_info.address}"
                     )
-                    self.device = RenogyBLEDevice(service_info.device)
+                    self.device = RenogyBLEDevice(
+                        service_info.device, service_info.advertisement.rssi
+                    )
                 else:
                     # Store the old name to detect changes
                     old_name = self.device.name
