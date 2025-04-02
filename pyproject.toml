@@ -18,3 +18,7 @@ markers = [
     "asyncio: mark test as an asyncio coroutine",
 ]
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.semantic_release]
+version_files = ["manifest.json"]
+version_regex = '''"version":\s*"(\d+\.\d+\.\d+)"'''
