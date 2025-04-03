@@ -64,7 +64,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Start the coordinator after all platforms are set up
     # This ensures all entities have had a chance to subscribe to the coordinator
     LOGGER.info(f"Starting coordinator for Renogy BLE device {device_address}")
-    entry.async_on_unload(coordinator.async_start())
+    try:
+        start_func = coordinator.async_start()
+        entry.async_on_unload(start_func)
+    except Exception as e:
+        LOGGER.error(f"Error starting coordinator for {device_address}: {e}")
 
     # Force an immediate refresh
     LOGGER.info(f"Requesting initial refresh for Renogy BLE device {device_address}")
