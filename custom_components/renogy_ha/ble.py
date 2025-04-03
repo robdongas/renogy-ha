@@ -20,6 +20,7 @@ from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
+    COMMANDS,
     DEFAULT_DEVICE_ID,
     DEFAULT_SCAN_INTERVAL,
     LOGGER,
@@ -83,15 +84,6 @@ def create_modbus_read_request(
     return frame
 
 
-# Modbus commands for requesting data
-commands = {
-    "device_info": (3, 12, 8),
-    "device_id": (3, 26, 1),
-    "battery": (3, 57348, 1),
-    "pv": (3, 256, 34),
-}
-
-
 class RenogyBLEDevice:
     """Representation of a Renogy BLE device."""
 
@@ -113,7 +105,8 @@ class RenogyBLEDevice:
         self.available = True
         # Parsed data from device
         self.parsed_data: Dict[str, Any] = {}
-        # Device type - default to controller
+        # Device type - default to unknown
+        # TODO: Change to unknown
         self.device_type = "controller"
         # Track when device was last marked as unavailable
         self.last_unavailable_time: Optional[datetime] = None
@@ -286,6 +279,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
         self._connection_in_progress = False
+
+    @property
+    def device_type(self) -> str:
+        """Get the device type, falling back to 'controller' if not available."""
+        if self.device and hasattr(self.device, "device_type"):
+            return self.device.device_type
+        return "unknown"  # Default to controller as fallback
 
     async def async_request_refresh(self) -> None:
         """Request a refresh."""
@@ -499,7 +499,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                 RENOGY_READ_CHAR_UUID, notification_handler
                             )
 
-                            for cmd_name, cmd in commands.items():
+                            for cmd_name, cmd in COMMANDS[self.device_type].items():
                                 notification_data.clear()
                                 notification_event.clear()
 

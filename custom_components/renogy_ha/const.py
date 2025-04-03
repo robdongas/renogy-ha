@@ -41,3 +41,19 @@ MAX_NOTIFICATION_WAIT_TIME = 2.0
 
 # Default device ID for Renogy devices
 DEFAULT_DEVICE_ID = 0xFF
+
+# Modbus commands for requesting data
+COMMANDS = {
+    "unknown": {
+        "controller": (3, 12, 8),
+        # TODO: Add other devices when supported
+        # "battery": (3, 5122, 8),
+        # "inverter": (3, 4311, 8),
+    },
+    "controller": {
+        "device_info": (3, 12, 8),
+        "device_id": (3, 26, 1),
+        "battery": (3, 57348, 1),
+        "pv": (3, 256, 34),
+    },
+}
