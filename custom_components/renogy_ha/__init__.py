@@ -9,7 +9,6 @@ from homeassistant.helpers.device_registry import async_get as async_get_device_
 
 from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
 from .const import (
-    ATTR_MODEL,
     CONF_DEVICE_TYPE,
     CONF_SCAN_INTERVAL,
     DEFAULT_DEVICE_TYPE,
@@ -115,9 +114,9 @@ async def update_device_registry(
     try:
         device_registry = async_get_device_registry(hass)
         model = (
-            device.parsed_data.get("model", ATTR_MODEL)
+            device.parsed_data.get("model", device.device_type.capitalize())
             if device.parsed_data
-            else ATTR_MODEL
+            else device.device_type.capitalize()
         )
 
         # Find the device in the registry using the domain and device address

@@ -21,7 +21,6 @@ CONF_DEVICE_TYPE = "device_type"  # New constant for device type
 
 # Device info
 ATTR_MANUFACTURER = "Renogy"
-ATTR_MODEL = "Rover"
 
 
 # Define device types as Enum
