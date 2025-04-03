@@ -345,36 +345,12 @@ async def async_setup_entry(
         # The coordinator will automatically update all subscribed entities
 
 
-def create_coordinator_entities(
+def create_entities_helper(
     coordinator: RenogyActiveBluetoothCoordinator,
+    device: Optional[RenogyBLEDevice],
     device_type: str = DEFAULT_DEVICE_TYPE,
 ) -> List[RenogyBLESensor]:
-    """Create sensor entities with just the coordinator (no device yet)."""
-    entities = []
-
-    # Group sensors by category
-    for category_name, sensor_list in {
-        "Battery": BATTERY_SENSORS,
-        "PV": PV_SENSORS,
-        "Load": LOAD_SENSORS,
-        "Controller": CONTROLLER_SENSORS,
-    }.items():
-        for description in sensor_list:
-            sensor = RenogyBLESensor(
-                coordinator, None, description, category_name, device_type
-            )
-            entities.append(sensor)
-
-    LOGGER.info(f"Created {len(entities)} entities with coordinator only")
-    return entities
-
-
-def create_device_entities(
-    coordinator: RenogyActiveBluetoothCoordinator,
-    device: RenogyBLEDevice,
-    device_type: str = DEFAULT_DEVICE_TYPE,
-) -> List[RenogyBLESensor]:
-    """Create sensor entities for a device."""
+    """Create sensor entities with provided coordinator and optional device."""
     entities = []
 
     # Group sensors by category
@@ -390,6 +366,26 @@ def create_device_entities(
             )
             entities.append(sensor)
 
+    return entities
+
+
+def create_coordinator_entities(
+    coordinator: RenogyActiveBluetoothCoordinator,
+    device_type: str = DEFAULT_DEVICE_TYPE,
+) -> List[RenogyBLESensor]:
+    """Create sensor entities with just the coordinator (no device yet)."""
+    entities = create_entities_helper(coordinator, None, device_type)
+    LOGGER.info(f"Created {len(entities)} entities with coordinator only")
+    return entities
+
+
+def create_device_entities(
+    coordinator: RenogyActiveBluetoothCoordinator,
+    device: RenogyBLEDevice,
+    device_type: str = DEFAULT_DEVICE_TYPE,
+) -> List[RenogyBLESensor]:
+    """Create sensor entities for a device."""
+    entities = create_entities_helper(coordinator, device, device_type)
     LOGGER.info(f"Created {len(entities)} entities for device {device.name}")
     return entities
 
