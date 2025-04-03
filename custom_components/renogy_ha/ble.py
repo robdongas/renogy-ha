@@ -125,8 +125,8 @@ class RenogyBLEDevice:
         self.available = True
         # Parsed data from device
         self.parsed_data: Dict[str, Any] = {}
-        # Model type - default to rover
-        self.model = "rover"
+        # Device type - default to controller
+        self.device_type = "controller"
         # Track when device was last marked as unavailable
         self.last_unavailable_time: Optional[datetime] = None
 
@@ -230,7 +230,7 @@ class RenogyBLEDevice:
 
             # Parse the raw data using the renogy-ble library
             # The parser will handle partial data and log appropriate warnings
-            parsed = RenogyParser.parse(raw_data, self.model, register)
+            parsed = RenogyParser.parse(raw_data, self.device_type, register)
 
             if not parsed:
                 LOGGER.warning(
@@ -590,16 +590,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 if success and device.parsed_data:
                     self.data = dict(device.parsed_data)
                     self.logger.debug(f"Updated coordinator data: {self.data}")
-
-                    # Check if we've discovered the model and validate it against supported models
-                    if "model" in device.parsed_data:
-                        device_model = device.parsed_data["model"]
-                        device.model = device_model
-                        self.logger.info(f"Detected device model: {device_model}")
-
-                    # Return model information in data for config validation
-                    if hasattr(device, "model") and device.model:
-                        self.data["model"] = device.model
 
                 return success
             finally:

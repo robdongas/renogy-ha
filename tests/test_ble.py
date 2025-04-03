@@ -230,7 +230,7 @@ class TestRenogyBLEDevice:
         assert device.available is True
         assert device.failure_count == 0
         assert device.parsed_data == {}
-        assert device.model == "rover"
+        assert device.device_type == "rover"
 
     def test_update_availability(self, mock_renogy_device):
         """Test the update_availability method."""
