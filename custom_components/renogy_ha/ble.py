@@ -20,8 +20,13 @@ from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
+    DEFAULT_DEVICE_ID,
     DEFAULT_SCAN_INTERVAL,
     LOGGER,
+    MAX_NOTIFICATION_WAIT_TIME,
+    RENOGY_READ_CHAR_UUID,
+    RENOGY_WRITE_CHAR_UUID,
+    UNAVAILABLE_RETRY_INTERVAL,
 )
 
 try:
@@ -34,20 +39,6 @@ except ImportError:
     )
     RenogyParser = None
     PARSER_AVAILABLE = False
-
-# BLE Characteristics and Service UUIDs
-RENOGY_READ_CHAR_UUID = (
-    "0000fff1-0000-1000-8000-00805f9b34fb"  # Characteristic for reading data
-)
-RENOGY_WRITE_CHAR_UUID = (
-    "0000ffd1-0000-1000-8000-00805f9b34fb"  # Characteristic for writing commands
-)
-
-# Time in minutes to wait before attempting to reconnect to unavailable devices
-UNAVAILABLE_RETRY_INTERVAL = 10
-
-# Maximum time to wait for a notification response (seconds)
-MAX_NOTIFICATION_WAIT_TIME = 2.0
 
 
 def modbus_crc(data: bytes) -> tuple:
@@ -91,9 +82,6 @@ def create_modbus_read_request(
     LOGGER.debug(f"create_request_payload: {register} ({list(frame)})")
     return frame
 
-
-# TODO: Make this configurable or automatically discover
-default_device_id = 0xFF
 
 # Modbus commands for requesting data
 commands = {
@@ -516,7 +504,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                 notification_event.clear()
 
                                 modbus_request = create_modbus_read_request(
-                                    default_device_id, *cmd
+                                    DEFAULT_DEVICE_ID, *cmd
                                 )
                                 self.logger.debug(
                                     f"Sending {cmd_name} command: {list(modbus_request)}"
