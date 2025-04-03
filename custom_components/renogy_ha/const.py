@@ -22,10 +22,6 @@ CONF_DEVICE_TYPE = "device_type"  # New constant for device type
 ATTR_MANUFACTURER = "Renogy"
 ATTR_MODEL = "Rover"
 
-# List of supported Renogy device models
-# Currently we only support the Renogy Rover controller
-SUPPORTED_MODELS = ["RNG-CTRL-RVR"]
-
 # List of supported device types
 DEVICE_TYPES = ["controller", "battery", "inverter"]
 DEFAULT_DEVICE_TYPE = "controller"
@@ -52,12 +48,6 @@ DEFAULT_DEVICE_ID = 0xFF
 
 # Modbus commands for requesting data
 COMMANDS = {
-    "unknown": {
-        "controller": (3, 12, 8),
-        # TODO: Add other devices when supported
-        # "battery": (3, 5122, 8),
-        # "inverter": (3, 4311, 8),
-    },
     "controller": {
         "device_info": (3, 12, 8),
         "device_id": (3, 26, 1),
