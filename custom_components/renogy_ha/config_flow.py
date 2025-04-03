@@ -25,17 +25,20 @@ from .const import (
     SUPPORTED_DEVICE_TYPES,
 )
 
-CONFIG_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_DEVICE_TYPE, default=DEFAULT_DEVICE_TYPE): vol.In(
-            DEVICE_TYPES
-        ),
-        vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
-            vol.Coerce(int),
-            vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-        ),
-    }
-)
+# Common schema fields for device configuration
+DEVICE_TYPE_SCHEMA = {
+    vol.Required(CONF_DEVICE_TYPE, default=DEFAULT_DEVICE_TYPE): vol.In(DEVICE_TYPES),
+}
+
+SCAN_INTERVAL_SCHEMA = {
+    vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
+        vol.Coerce(int),
+        vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+    ),
+}
+
+# Base configuration schema without device selection
+CONFIG_SCHEMA = vol.Schema({**DEVICE_TYPE_SCHEMA, **SCAN_INTERVAL_SCHEMA})
 
 
 class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -48,21 +51,25 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
         self._discovered_devices: dict[str, BluetoothServiceInfoBleak] = {}
         self._discovered_device: BluetoothServiceInfoBleak | None = None
 
+    def _is_renogy_device(self, discovery_info: BluetoothServiceInfoBleak) -> bool:
+        """Check if a device is a supported Renogy device."""
+        return discovery_info.name is not None and discovery_info.name.startswith(
+            RENOGY_BT_PREFIX
+        )
+
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
         """Handle the bluetooth discovery step."""
         # Check if this is a Renogy device based on the name
-        if not discovery_info.name or not discovery_info.name.startswith(
-            RENOGY_BT_PREFIX
-        ):
+        if not self._is_renogy_device(discovery_info):
             return self.async_abort(reason="not_supported_device")
 
         LOGGER.info(
             f"Bluetooth auto-discovery for Renogy device: {discovery_info.name} ({discovery_info.address})"
         )
 
-        # Set unique ID based on device address
+        # Set unique ID and check if already configured
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
 
@@ -101,8 +108,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if self._discovered_device:
                 # Coming from bluetooth discovery with device already selected
-                address = self._discovered_device.address
-                user_input[CONF_ADDRESS] = address
+                user_input[CONF_ADDRESS] = self._discovered_device.address
 
                 # Create a config entry
                 return self.async_create_entry(
@@ -150,15 +156,8 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
                         for address, info in self._discovered_devices.items()
                     }
                 ),
-                vol.Required(CONF_DEVICE_TYPE, default=DEFAULT_DEVICE_TYPE): vol.In(
-                    DEVICE_TYPES
-                ),
-                vol.Optional(
-                    CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
-                ): vol.All(
-                    vol.Coerce(int),
-                    vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-                ),
+                **DEVICE_TYPE_SCHEMA,
+                **SCAN_INTERVAL_SCHEMA,
             }
         )
 
@@ -180,9 +179,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
 
         for discovery_info in bluetooth.async_discovered_service_info(self.hass):
             # Skip devices that don't match our pattern
-            if not discovery_info.name or not discovery_info.name.startswith(
-                RENOGY_BT_PREFIX
-            ):
+            if not self._is_renogy_device(discovery_info):
                 continue
 
             # Skip devices that are already configured
