@@ -16,6 +16,7 @@ RENOGY_BT_PREFIX = "BT-TH-"
 
 # Configuration parameters
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_DEVICE_TYPE = "device_type"  # New constant for device type
 
 # Device info
 ATTR_MANUFACTURER = "Renogy"
@@ -24,6 +25,13 @@ ATTR_MODEL = "Rover"
 # List of supported Renogy device models
 # Currently we only support the Renogy Rover controller
 SUPPORTED_MODELS = ["RNG-CTRL-RVR"]
+
+# List of supported device types
+DEVICE_TYPES = ["controller", "battery", "inverter"]
+DEFAULT_DEVICE_TYPE = "controller"
+
+# List of fully supported device types (currently only controller)
+SUPPORTED_DEVICE_TYPES = ["controller"]
 
 # BLE Characteristics and Service UUIDs
 RENOGY_READ_CHAR_UUID = (

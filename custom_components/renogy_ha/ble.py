@@ -22,6 +22,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import (
     COMMANDS,
     DEFAULT_DEVICE_ID,
+    DEFAULT_DEVICE_TYPE,
     DEFAULT_SCAN_INTERVAL,
     LOGGER,
     MAX_NOTIFICATION_WAIT_TIME,
@@ -87,7 +88,12 @@ def create_modbus_read_request(
 class RenogyBLEDevice:
     """Representation of a Renogy BLE device."""
 
-    def __init__(self, ble_device: BLEDevice, advertisement_rssi: Optional[int] = None):
+    def __init__(
+        self,
+        ble_device: BLEDevice,
+        advertisement_rssi: Optional[int] = None,
+        device_type: str = DEFAULT_DEVICE_TYPE,
+    ):
         """Initialize the Renogy BLE device."""
         self.ble_device = ble_device
         self.address = ble_device.address
@@ -105,9 +111,8 @@ class RenogyBLEDevice:
         self.available = True
         # Parsed data from device
         self.parsed_data: Dict[str, Any] = {}
-        # Device type - default to unknown
-        # TODO: Change to unknown
-        self.device_type = "controller"
+        # Device type - set from configuration
+        self.device_type = device_type
         # Track when device was last marked as unavailable
         self.last_unavailable_time: Optional[datetime] = None
 
@@ -249,6 +254,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         *,
         address: str,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
+        device_type: str = DEFAULT_DEVICE_TYPE,
         device_data_callback: Optional[Callable[[RenogyBLEDevice], None]] = None,
     ):
         """Initialize the coordinator."""
@@ -263,10 +269,11 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         )
         self.device: Optional[RenogyBLEDevice] = None
         self.scan_interval = scan_interval
+        self.device_type = device_type
         self.last_poll_time: Optional[datetime] = None
         self.device_data_callback = device_data_callback
         self.logger.info(
-            f"Initialized coordinator for {address} with {scan_interval}s interval"
+            f"Initialized coordinator for {address} as {device_type} with {scan_interval}s interval"
         )
 
         # Add required properties for Home Assistant CoordinatorEntity compatibility
@@ -282,10 +289,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     @property
     def device_type(self) -> str:
-        """Get the device type, falling back to 'controller' if not available."""
-        if self.device and hasattr(self.device, "device_type"):
-            return self.device.device_type
-        return "unknown"  # Default to controller as fallback
+        """Get the device type from configuration."""
+        return self._device_type
+
+    @device_type.setter
+    def device_type(self, value: str) -> None:
+        """Set the device type."""
+        self._device_type = value
 
     async def async_request_refresh(self) -> None:
         """Request a refresh."""
@@ -445,10 +455,12 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 # Use service_info to get a BLE device and update our device object
                 if not self.device:
                     self.logger.info(
-                        f"Creating new RenogyBLEDevice for {service_info.address}"
+                        f"Creating new RenogyBLEDevice for {service_info.address} as {self.device_type}"
                     )
                     self.device = RenogyBLEDevice(
-                        service_info.device, service_info.advertisement.rssi
+                        service_info.device,
+                        service_info.advertisement.rssi,
+                        device_type=self.device_type,
                     )
                 else:
                     # Store the old name to detect changes
@@ -474,8 +486,17 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                         else service_info.device.rssi
                     )
 
+                    # Ensure device type is set correctly
+                    if self.device.device_type != self.device_type:
+                        self.logger.info(
+                            f"Updating device type from '{self.device.device_type}' to '{self.device_type}'"
+                        )
+                        self.device.device_type = self.device_type
+
                 device = self.device
-                self.logger.info(f"Polling device: {device.name} ({device.address})")
+                self.logger.info(
+                    f"Polling {device.device_type} device: {device.name} ({device.address})"
+                )
                 success = False
 
                 async with BleakClient(service_info.device) as client:

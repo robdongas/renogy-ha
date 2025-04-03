@@ -10,7 +10,9 @@ from homeassistant.helpers.device_registry import async_get as async_get_device_
 from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
 from .const import (
     ATTR_MODEL,
+    CONF_DEVICE_TYPE,
     CONF_SCAN_INTERVAL,
+    DEFAULT_DEVICE_TYPE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     LOGGER,
@@ -27,13 +29,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Get configuration from entry
     scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     device_address = entry.data.get(CONF_ADDRESS)
+    device_type = entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
 
     if not device_address:
         LOGGER.error("No device address provided in config entry")
         return False
 
     LOGGER.info(
-        f"Configuring Renogy BLE device {device_address} with scan interval {scan_interval}s"
+        f"Configuring Renogy BLE device {device_address} as {device_type} with scan interval {scan_interval}s"
     )
 
     # Create a coordinator for this entry
@@ -42,6 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         logger=LOGGER,
         address=device_address,
         scan_interval=scan_interval,
+        device_type=device_type,
         device_data_callback=lambda device: _handle_device_update(hass, entry, device),
     )
 

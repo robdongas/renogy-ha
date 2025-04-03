@@ -29,7 +29,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
-from .const import ATTR_MANUFACTURER, ATTR_MODEL, DOMAIN, LOGGER, RENOGY_BT_PREFIX
+from .const import (
+    ATTR_MANUFACTURER,
+    CONF_DEVICE_TYPE,
+    DEFAULT_DEVICE_TYPE,
+    DOMAIN,
+    LOGGER,
+    RENOGY_BT_PREFIX,
+)
 
 # Registry of sensor keys
 KEY_BATTERY_VOLTAGE = "battery_voltage"
@@ -271,6 +278,10 @@ async def async_setup_entry(
     renogy_data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = renogy_data["coordinator"]
 
+    # Get device type from config
+    device_type = config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+    LOGGER.info(f"Setting up sensors for device type: {device_type}")
+
     # Try to wait for a real device name before creating entities
     # This helps ensure entity IDs will match the real device name
     if (
@@ -305,10 +316,12 @@ async def async_setup_entry(
         or not coordinator.device.name.startswith("Unknown")
     ):
         LOGGER.info(f"Creating entities with device name: {coordinator.device.name}")
-        device_entities = create_device_entities(coordinator, coordinator.device)
+        device_entities = create_device_entities(
+            coordinator, coordinator.device, device_type
+        )
     else:
         LOGGER.info("Creating entities with coordinator only (generic name)")
-        device_entities = create_coordinator_entities(coordinator)
+        device_entities = create_coordinator_entities(coordinator, device_type)
 
     # Add all entities to Home Assistant
     if device_entities:
@@ -334,6 +347,7 @@ async def async_setup_entry(
 
 def create_coordinator_entities(
     coordinator: RenogyActiveBluetoothCoordinator,
+    device_type: str = DEFAULT_DEVICE_TYPE,
 ) -> List[RenogyBLESensor]:
     """Create sensor entities with just the coordinator (no device yet)."""
     entities = []
@@ -346,7 +360,9 @@ def create_coordinator_entities(
         "Controller": CONTROLLER_SENSORS,
     }.items():
         for description in sensor_list:
-            sensor = RenogyBLESensor(coordinator, None, description, category_name)
+            sensor = RenogyBLESensor(
+                coordinator, None, description, category_name, device_type
+            )
             entities.append(sensor)
 
     LOGGER.info(f"Created {len(entities)} entities with coordinator only")
@@ -354,7 +370,9 @@ def create_coordinator_entities(
 
 
 def create_device_entities(
-    coordinator: RenogyActiveBluetoothCoordinator, device: RenogyBLEDevice
+    coordinator: RenogyActiveBluetoothCoordinator,
+    device: RenogyBLEDevice,
+    device_type: str = DEFAULT_DEVICE_TYPE,
 ) -> List[RenogyBLESensor]:
     """Create sensor entities for a device."""
     entities = []
@@ -367,7 +385,9 @@ def create_device_entities(
         "Controller": CONTROLLER_SENSORS,
     }.items():
         for description in sensor_list:
-            sensor = RenogyBLESensor(coordinator, device, description, category_name)
+            sensor = RenogyBLESensor(
+                coordinator, device, description, category_name, device_type
+            )
             entities.append(sensor)
 
     LOGGER.info(f"Created {len(entities)} entities for device {device.name}")
@@ -386,43 +406,50 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
         device: Optional[RenogyBLEDevice],
         description: RenogyBLESensorDescription,
         category: str = None,
+        device_type: str = DEFAULT_DEVICE_TYPE,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._device = device
         self._category = category
+        self._device_type = device_type
         self._attr_native_value = None
+
+        # Generate a device model name that includes the device type
+        device_model = f"Renogy {device_type.capitalize()}"
+        if device and device.parsed_data and KEY_MODEL in device.parsed_data:
+            device_model = device.parsed_data[KEY_MODEL]
 
         # Device-dependent properties
         if device:
             self._attr_unique_id = f"{device.address}_{description.key}"
             self._attr_name = f"{device.name} {description.name}"
+
             # Properly set up device_info for the device registry
-            model = (
-                device.parsed_data.get(KEY_MODEL, ATTR_MODEL)
-                if device.parsed_data
-                else ATTR_MODEL
-            )
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, device.address)},
                 name=device.name,
                 manufacturer=ATTR_MANUFACTURER,
-                model=model,
+                model=device_model,
                 hw_version=f"BLE Address: {device.address}",
+                sw_version=device_type,  # Add device type as software version for clarity
             )
         else:
             # If we don't have a device yet, use coordinator address for unique ID
             self._attr_unique_id = f"{coordinator.address}_{description.key}"
             self._attr_name = f"Renogy {description.name}"
+
             # Set up basic device info based on coordinator
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, coordinator.address)},
-                name="Renogy Solar Controller",
+                name=f"Renogy {device_type.capitalize()}",
                 manufacturer=ATTR_MANUFACTURER,
-                model=ATTR_MODEL,
+                model=device_model,
                 hw_version=f"BLE Address: {coordinator.address}",
+                sw_version=device_type,  # Add device type as software version for clarity
             )
+
         self._last_updated = None
 
     @property
@@ -434,26 +461,30 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
         # Try to get device from coordinator
         if hasattr(self.coordinator, "device") and self.coordinator.device:
             self._device = self.coordinator.device
+
+            # Generate a device model name that includes the device type
+            device_model = f"Renogy {self._device_type.capitalize()}"
+            if self._device.parsed_data and KEY_MODEL in self._device.parsed_data:
+                device_model = self._device.parsed_data[KEY_MODEL]
+
             # Update our unique_id to match the actual device
             self._attr_unique_id = (
                 f"{self._device.address}_{self.entity_description.key}"
             )
             # Also update our name
             self._attr_name = f"{self._device.name} {self.entity_description.name}"
+
             # And device_info
-            model = (
-                self._device.parsed_data.get(KEY_MODEL, ATTR_MODEL)
-                if self._device.parsed_data
-                else ATTR_MODEL
-            )
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, self._device.address)},
                 name=self._device.name,
                 manufacturer=ATTR_MANUFACTURER,
-                model=model,
+                model=device_model,
                 hw_version=f"BLE Address: {self._device.address}",
+                sw_version=self._device_type,  # Add device type as software version
             )
             LOGGER.info(f"Updated device info with real name: {self._device.name}")
+
         return self._device
 
     @property
