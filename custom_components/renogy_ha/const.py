@@ -1,6 +1,7 @@
 """Constants for the Renogy BLE integration."""
 
 import logging
+from enum import Enum
 
 DOMAIN = "renogy"
 
@@ -22,12 +23,20 @@ CONF_DEVICE_TYPE = "device_type"  # New constant for device type
 ATTR_MANUFACTURER = "Renogy"
 ATTR_MODEL = "Rover"
 
+
+# Define device types as Enum
+class DeviceType(Enum):
+    CONTROLLER = "controller"
+    BATTERY = "battery"
+    INVERTER = "inverter"
+
+
 # List of supported device types
-DEVICE_TYPES = ["controller", "battery", "inverter"]
-DEFAULT_DEVICE_TYPE = "controller"
+DEVICE_TYPES = [e.value for e in DeviceType]
+DEFAULT_DEVICE_TYPE = DeviceType.CONTROLLER.value
 
 # List of fully supported device types (currently only controller)
-SUPPORTED_DEVICE_TYPES = ["controller"]
+SUPPORTED_DEVICE_TYPES = [DeviceType.CONTROLLER.value]
 
 # BLE Characteristics and Service UUIDs
 RENOGY_READ_CHAR_UUID = (
@@ -48,7 +57,7 @@ DEFAULT_DEVICE_ID = 0xFF
 
 # Modbus commands for requesting data
 COMMANDS = {
-    "controller": {
+    DeviceType.CONTROLLER.value: {
         "device_info": (3, 12, 8),
         "device_id": (3, 26, 1),
         "battery": (3, 57348, 1),
