@@ -299,7 +299,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     async def async_request_refresh(self) -> None:
         """Request a refresh."""
-        self.logger.debug("Manual refresh requested for device %s", self.address)
+        self.logger.debug(f"Manual refresh requested for device {self.address}")
 
         # If a connection is already in progress, don't start another one
         if self._connection_in_progress:
@@ -311,7 +311,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         # Get the last available service info for this device
         service_info = bluetooth.async_last_service_info(self.hass, self.address)
         if not service_info:
-            self.logger.warning("No service info available for device %s", self.address)
+            self.logger.warning(f"No service info available for device {self.address}")
             self.last_update_success = False
             return
 
@@ -323,7 +323,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 update_callback()
         except Exception as err:
             self.last_update_success = False
-            self.logger.error("Error refreshing device %s: %s", self.address, err)
+            self.logger.error(f"Error refreshing device {self.address}: {err}")
             if self.device:
                 self.device.update_availability(False)
 
@@ -365,7 +365,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     def async_start(self) -> Callable[[], None]:
         """Start polling."""
-        self.logger.info("Starting polling for device %s", self.address)
+        self.logger.info(f"Starting polling for device {self.address}")
 
         def _unsub() -> None:
             """Unsubscribe from updates."""

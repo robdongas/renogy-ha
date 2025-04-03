@@ -273,7 +273,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Renogy BLE sensors."""
-    LOGGER.info("Setting up Renogy BLE sensors for entry: %s", config_entry.entry_id)
+    LOGGER.info(f"Setting up Renogy BLE sensors for entry: {config_entry.entry_id}")
 
     renogy_data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = renogy_data["coordinator"]
