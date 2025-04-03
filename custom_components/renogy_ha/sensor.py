@@ -429,7 +429,7 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
                 hw_version=f"BLE Address: {device.address}",
-                sw_version=device_type,  # Add device type as software version for clarity
+                sw_version=device_type.capitalize(),  # Add device type as software version for clarity
             )
         else:
             # If we don't have a device yet, use coordinator address for unique ID
@@ -443,7 +443,7 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
                 hw_version=f"BLE Address: {coordinator.address}",
-                sw_version=device_type,  # Add device type as software version for clarity
+                sw_version=device_type.capitalize(),  # Add device type as software version for clarity
             )
 
         self._last_updated = None
@@ -477,7 +477,7 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                 manufacturer=ATTR_MANUFACTURER,
                 model=device_model,
                 hw_version=f"BLE Address: {self._device.address}",
-                sw_version=self._device_type,  # Add device type as software version
+                sw_version=self._device_type.capitalize(),  # Add device type as software version
             )
             LOGGER.info(f"Updated device info with real name: {self._device.name}")
 
