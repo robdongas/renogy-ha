@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.2 (2025-04-07)
+
+### Bug Fixes
+
+- Sync version in pyproject.toml and manifest.json
+  ([`c673422`](https://github.com/IAmTheMitchell/renogy-ha/commit/c67342272f5e3ce166e2628587717abe6b68b530))
+
+
 ## v0.2.1 (2025-04-07)
 
 ### Bug Fixes
