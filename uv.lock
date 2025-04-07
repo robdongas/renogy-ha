@@ -1298,16 +1298,19 @@ wheels = [
 
 [[package]]
 name = "renogy-ble"
-version = "0.1.3"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fc/6c/d249a88cd08147c7f5f177a9cedd4e11064e0ae1c913de8157a3dd868da2/renogy_ble-0.1.3.tar.gz", hash = "sha256:e6039733825c7d577247f9f0b7cea1a219cfcaf76cbea6937d3e7b24e2c9db8b", size = 8768 }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/61/75/10b279cd0af5ad133422aa54bfe0f68b3da3edc1137e5d1bee5bfbf73245/renogy_ble-0.2.1.tar.gz", hash = "sha256:65ac955ebbdc567e7bd2335a7476e327240f7ff97d9d4480792dd2b488c72c8e", size = 8855 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/e8/38b7e0012964e028c51da1671e95183d6d3900cd283dfef8b7cc6306f6e0/renogy_ble-0.1.3-py3-none-any.whl", hash = "sha256:286904484e39ce5080c4e8e5736d4cb79fbc96e34cb5c3c3a8e8d9b7edfe54ae", size = 6317 },
+    { url = "https://files.pythonhosted.org/packages/41/7b/8113ae0e7daf60b32966f7609e157d265e8c41fb72b4d4782ca4f3113f6b/renogy_ble-0.2.1-py3-none-any.whl", hash = "sha256:79a772a6c1c325e8852930efd058900af7d0234854da05b82e1d85431650cd2a", size = 6378 },
 ]
 
 [[package]]
 name = "renogy-ha"
-version = "0.1.0"
+version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "bleak" },
@@ -1323,7 +1326,7 @@ requires-dist = [
     { name = "homeassistant", specifier = ">=2025.3.3" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },
-    { name = "renogy-ble", specifier = ">=0.1.3" },
+    { name = "renogy-ble", specifier = ">=0.2.1" },
 ]
 
 [[package]]

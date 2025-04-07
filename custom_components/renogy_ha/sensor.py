@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
@@ -25,13 +26,17 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .ble import RenogyBLEDevice
-from .const import ATTR_MANUFACTURER, ATTR_MODEL, DOMAIN, LOGGER
+from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
+from .const import (
+    ATTR_MANUFACTURER,
+    CONF_DEVICE_TYPE,
+    DEFAULT_DEVICE_TYPE,
+    DOMAIN,
+    LOGGER,
+    RENOGY_BT_PREFIX,
+)
 
 # Registry of sensor keys
 KEY_BATTERY_VOLTAGE = "battery_voltage"
@@ -268,91 +273,84 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Renogy BLE sensors."""
-    LOGGER.debug("Setting up Renogy BLE sensors")
+    LOGGER.info(f"Setting up Renogy BLE sensors for entry: {config_entry.entry_id}")
 
     renogy_data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = renogy_data["coordinator"]
 
-    # Start the BLE polling
-    await coordinator.start_polling()
+    # Get device type from config
+    device_type = config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
+    LOGGER.info(f"Setting up sensors for device type: {device_type}")
 
-    # Entity tracking to avoid duplicates
-    entity_registry = set()
+    # Try to wait for a real device name before creating entities
+    # This helps ensure entity IDs will match the real device name
+    if (
+        not coordinator.device
+        or coordinator.device.name.startswith("Unknown")
+        or not coordinator.device.name.startswith(RENOGY_BT_PREFIX)
+    ):
+        LOGGER.info("Waiting for real device name before creating entities...")
+        # Force an immediate refresh to try getting device info
+        await coordinator.async_request_refresh()
 
-    @callback
-    def device_discovered_callback(device: RenogyBLEDevice) -> None:
-        """Create entities for a newly discovered device."""
-        if not device or not device.is_available:
-            return
+        # Wait for a short time to see if we can get the real device name
+        # We'll wait up to 10 seconds, checking every second
+        real_name_found = False
+        for _ in range(10):
+            await asyncio.sleep(1)
+            if coordinator.device and coordinator.device.name.startswith(
+                RENOGY_BT_PREFIX
+            ):
+                LOGGER.info(f"Real device name found: {coordinator.device.name}")
+                real_name_found = True
+                break
 
-        # Create entities for this device if not already done
-        new_entities = []
-        device_id = f"{device.address}"
-
-        if device_id in entity_registry:
-            # Already set up this device
-            return
-
-        LOGGER.info(
-            f"Creating entities for newly discovered device: {device.name} ({device.address})"
-        )
-        entity_registry.add(device_id)
-
-        # Create all entities for this device
-        device_entities = create_device_entities(coordinator, device)
-        new_entities.extend(device_entities)
-
-        # Register device in hass.data
-        if device not in renogy_data["devices"]:
-            LOGGER.debug(f"Adding device {device.name} to registry")
-            renogy_data["devices"].append(device)
-
-        # Add entities to Home Assistant
-        if new_entities:
-            LOGGER.debug(
-                f"Adding {len(new_entities)} entities for device {device.name}"
+        if not real_name_found:
+            LOGGER.warning(
+                "No real device name found after waiting. Using generic name for entities."
             )
-            async_add_entities(new_entities)
 
-    # Set up callback for future device discoveries
-    async def setup_discovered_devices() -> None:
-        """Set up sensors for already discovered devices and register callback for new ones."""
-        # Create entities for already discovered devices
-        initial_entities = []
+    # Now create entities with the best name we have
+    if coordinator.device and (
+        coordinator.device.name.startswith(RENOGY_BT_PREFIX)
+        or not coordinator.device.name.startswith("Unknown")
+    ):
+        LOGGER.info(f"Creating entities with device name: {coordinator.device.name}")
+        device_entities = create_device_entities(
+            coordinator, coordinator.device, device_type
+        )
+    else:
+        LOGGER.info("Creating entities with coordinator only (generic name)")
+        device_entities = create_coordinator_entities(coordinator, device_type)
 
-        # Add entities for devices discovered so far
-        for device_address, device in coordinator.devices.items():
-            device_id = f"{device.address}"
+    # Add all entities to Home Assistant
+    if device_entities:
+        LOGGER.info(f"Adding {len(device_entities)} entities")
+        async_add_entities(device_entities)
+    else:
+        LOGGER.warning("No entities were created")
 
-            if device_id not in entity_registry:
-                LOGGER.info(
-                    f"Setting up initial device: {device.name} ({device.address})"
-                )
-                entity_registry.add(device_id)
+    # Set up a callback for device updates to update our entities
+    @callback
+    def _async_device_update() -> None:
+        """Handle device updates."""
+        device = coordinator.device
+        if not device:
+            LOGGER.warning("Device update received but no device available")
+            return
 
-                # Create entities for this device
-                device_entities = create_device_entities(coordinator, device)
-                initial_entities.extend(device_entities)
+        LOGGER.info(f"Device update: {device.name} (available: {device.is_available})")
 
-                # Register device in hass.data
-                if device not in renogy_data["devices"]:
-                    renogy_data["devices"].append(device)
-
-        # Add initial entities
-        if initial_entities:
-            LOGGER.info(f"Adding {len(initial_entities)} initial entities")
-            async_add_entities(initial_entities)
-
-        # Register for future device discoveries
-        coordinator.ble_client.data_callback = device_discovered_callback
-
-    await setup_discovered_devices()
+        # We don't need to create new entities as they were already created during setup
+        # The coordinator will automatically update all subscribed entities
 
 
-def create_device_entities(
-    coordinator: DataUpdateCoordinator, device: RenogyBLEDevice
+def create_entities_helper(
+    coordinator: RenogyActiveBluetoothCoordinator,
+    device: Optional[RenogyBLEDevice],
+    device_type: str = DEFAULT_DEVICE_TYPE,
 ) -> List[RenogyBLESensor]:
-    """Create sensor entities for a device."""
+    """Create sensor entities with provided coordinator and optional device."""
     entities = []
 
     # Group sensors by category
@@ -363,10 +361,32 @@ def create_device_entities(
         "Controller": CONTROLLER_SENSORS,
     }.items():
         for description in sensor_list:
-            sensor = RenogyBLESensor(coordinator, device, description, category_name)
+            sensor = RenogyBLESensor(
+                coordinator, device, description, category_name, device_type
+            )
             entities.append(sensor)
 
-    LOGGER.debug(f"Created {len(entities)} entities for device {device.name}")
+    return entities
+
+
+def create_coordinator_entities(
+    coordinator: RenogyActiveBluetoothCoordinator,
+    device_type: str = DEFAULT_DEVICE_TYPE,
+) -> List[RenogyBLESensor]:
+    """Create sensor entities with just the coordinator (no device yet)."""
+    entities = create_entities_helper(coordinator, None, device_type)
+    LOGGER.info(f"Created {len(entities)} entities with coordinator only")
+    return entities
+
+
+def create_device_entities(
+    coordinator: RenogyActiveBluetoothCoordinator,
+    device: RenogyBLEDevice,
+    device_type: str = DEFAULT_DEVICE_TYPE,
+) -> List[RenogyBLESensor]:
+    """Create sensor entities for a device."""
+    entities = create_entities_helper(coordinator, device, device_type)
+    LOGGER.info(f"Created {len(entities)} entities for device {device.name}")
     return entities
 
 
@@ -374,74 +394,137 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
     """Representation of a Renogy BLE sensor."""
 
     entity_description: RenogyBLESensorDescription
+    coordinator: RenogyActiveBluetoothCoordinator
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator,
-        device: RenogyBLEDevice,
+        coordinator: RenogyActiveBluetoothCoordinator,
+        device: Optional[RenogyBLEDevice],
         description: RenogyBLESensorDescription,
         category: str = None,
+        device_type: str = DEFAULT_DEVICE_TYPE,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._device = device
         self._category = category
-        self._attr_unique_id = f"{device.address}_{description.key}"
+        self._device_type = device_type
+        self._attr_native_value = None
+
+        # Generate a device model name that includes the device type
+        device_model = f"Renogy {device_type.capitalize()}"
+        if device and device.parsed_data and KEY_MODEL in device.parsed_data:
+            device_model = device.parsed_data[KEY_MODEL]
+
+        # Device-dependent properties
+        if device:
+            self._attr_unique_id = f"{device.address}_{description.key}"
+            self._attr_name = f"{device.name} {description.name}"
+
+            # Properly set up device_info for the device registry
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, device.address)},
+                name=device.name,
+                manufacturer=ATTR_MANUFACTURER,
+                model=device_model,
+                hw_version=f"BLE Address: {device.address}",
+                sw_version=device_type.capitalize(),  # Add device type as software version for clarity
+            )
+        else:
+            # If we don't have a device yet, use coordinator address for unique ID
+            self._attr_unique_id = f"{coordinator.address}_{description.key}"
+            self._attr_name = f"Renogy {description.name}"
+
+            # Set up basic device info based on coordinator
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, coordinator.address)},
+                name=f"Renogy {device_type.capitalize()}",
+                manufacturer=ATTR_MANUFACTURER,
+                model=device_model,
+                hw_version=f"BLE Address: {coordinator.address}",
+                sw_version=device_type.capitalize(),  # Add device type as software version for clarity
+            )
+
         self._last_updated = None
-        self._attr_name = f"{device.name} {description.name}"
 
-        # Properly set up device_info for the device registry
-        model = (
-            device.parsed_data.get(KEY_MODEL, ATTR_MODEL)
-            if device.parsed_data
-            else ATTR_MODEL
-        )
+    @property
+    def device(self) -> Optional[RenogyBLEDevice]:
+        """Get the current device - either stored or from coordinator."""
+        if self._device:
+            return self._device
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device.address)},
-            name=device.name,
-            manufacturer=ATTR_MANUFACTURER,
-            model=model,
-            hw_version=f"BLE Address: {device.address}",
-        )
+        # Try to get device from coordinator
+        if hasattr(self.coordinator, "device") and self.coordinator.device:
+            self._device = self.coordinator.device
 
-        # Set initial availability based on device status
-        self._attr_available = device.is_available
+            # Generate a device model name that includes the device type
+            device_model = f"Renogy {self._device_type.capitalize()}"
+            if self._device.parsed_data and KEY_MODEL in self._device.parsed_data:
+                device_model = self._device.parsed_data[KEY_MODEL]
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self._last_updated = datetime.now()
+            # Update our unique_id to match the actual device
+            self._attr_unique_id = (
+                f"{self._device.address}_{self.entity_description.key}"
+            )
+            # Also update our name
+            self._attr_name = f"{self._device.name} {self.entity_description.name}"
 
-        # Always update availability based on device status
-        self._attr_available = self._device.is_available
+            # And device_info
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, self._device.address)},
+                name=self._device.name,
+                manufacturer=ATTR_MANUFACTURER,
+                model=device_model,
+                hw_version=f"BLE Address: {self._device.address}",
+                sw_version=self._device_type.capitalize(),  # Add device type as software version
+            )
+            LOGGER.info(f"Updated device info with real name: {self._device.name}")
 
-        try:
-            # Get the latest data for our device from the coordinator
-            if self.coordinator.data and self._device.address in self.coordinator.data:
-                device_data = self.coordinator.data[self._device.address]
-                if device_data is not None:
-                    LOGGER.debug(
-                        f"Updated sensor {self.name} with new value from coordinator"
-                    )
-            # Always write state, even if no data, to ensure UI updates
-            self.async_write_ha_state()
-        except Exception as e:
-            LOGGER.warning(f"Error updating sensor {self.name}: {e}")
-            # Still write state to show the error condition
-            self.async_write_ha_state()
+        return self._device
+
+    @property
+    def available(self) -> bool:
+        """Return if the sensor is available."""
+        # Basic coordinator availability check
+        if not self.coordinator.last_update_success:
+            return False
+
+        # Check device availability if we have a device
+        if self._device and not self._device.is_available:
+            return False
+
+        # For the actual data, check either the device's parsed_data or coordinator's data
+        data_available = False
+        if self._device and self._device.parsed_data:
+            data_available = True
+        elif self.coordinator.data:
+            data_available = True
+
+        return data_available
 
     @property
     def native_value(self) -> Any:
         """Return the sensor's value."""
+        # Use cached value if available
+        if self._attr_native_value is not None:
+            return self._attr_native_value
+
+        device = self.device
+        data = None
+
+        # Get data from device if available, otherwise from coordinator
+        if device and device.parsed_data:
+            data = device.parsed_data
+        elif self.coordinator.data:
+            data = self.coordinator.data
+
+        if not data:
+            return None
+
         try:
-            if not self._device.parsed_data:
-                return None
-
             if self.entity_description.value_fn:
-                value = self.entity_description.value_fn(self._device.parsed_data)
-
+                value = self.entity_description.value_fn(data)
                 # Basic type validation based on device_class
                 if value is not None:
                     if self.device_class in [
@@ -464,20 +547,41 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                             )
                             return None
 
+                # Cache the value
+                self._attr_native_value = value
                 return value
         except Exception as e:
             LOGGER.warning(f"Error getting native value for {self.name}: {e}")
         return None
 
-    @property
-    def available(self) -> bool:
-        """Return if the sensor is available."""
-        # Check both the coordinator's and the device's availability
-        return (
-            super().available
-            and self._device.is_available
-            and self._device.parsed_data is not None
-        )
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        LOGGER.debug(f"Coordinator update for {self.name}")
+
+        # Clear cached value to force a refresh on next state read
+        self._attr_native_value = None
+
+        # If we don't have a device yet, check if coordinator now has one
+        if (
+            not self._device
+            and hasattr(self.coordinator, "device")
+            and self.coordinator.device
+        ):
+            self._device = self.coordinator.device
+            # Update our unique_id and name to match the actual device
+            self._attr_unique_id = (
+                f"{self._device.address}_{self.entity_description.key}"
+            )
+            self._attr_name = f"{self._device.name} {self.entity_description.name}"
+
+        self._last_updated = datetime.now()
+
+        # Explicitly get our value before updating state, so it's cached
+        self.native_value
+
+        # Update entity state
+        self.async_write_ha_state()
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -486,8 +590,15 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
         if self._last_updated:
             attrs["last_updated"] = self._last_updated.isoformat()
 
-        # Add the device's RSSI as attribute
-        if hasattr(self._device, "rssi") and self._device.rssi is not None:
-            attrs["rssi"] = self._device.rssi
+        # Add the device's RSSI as attribute if available
+        device = self.device
+        if device and hasattr(device, "rssi") and device.rssi is not None:
+            attrs["rssi"] = device.rssi
+
+        # Add data source info
+        if self._device and self._device.parsed_data:
+            attrs["data_source"] = "device"
+        elif self.coordinator.data:
+            attrs["data_source"] = "coordinator"
 
         return attrs
