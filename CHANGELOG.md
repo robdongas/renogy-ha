@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.2.1 (2025-04-07)
+
+### Bug Fixes
+
+- Remove invalid HACS keys
+  ([`944643d`](https://github.com/IAmTheMitchell/renogy-ha/commit/944643de382969438d735bf96c0ef8f52debe69a))
+
+### Continuous Integration
+
+- Add HACS validate.yaml
+  ([`351f3dc`](https://github.com/IAmTheMitchell/renogy-ha/commit/351f3dc2ee1cc3e85b2990ac1c8d13e2d805f44a))
+
+- Point to manifest.json for version
+  ([`2480393`](https://github.com/IAmTheMitchell/renogy-ha/commit/2480393f8d4db0d2ffc9a4c39b541df5bc6b8e0a))
+
+
 ## v0.2.0 (2025-04-07)
 
 ### Bug Fixes
