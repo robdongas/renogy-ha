@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v0.2.3 (2025-04-08)
+
+### Bug Fixes
+
+- Try syncing version again
+  ([`d6414fb`](https://github.com/IAmTheMitchell/renogy-ha/commit/d6414fbdf8e9de92c9db53f264d7a49916e217bf))
+
+- Use version_variables for json version update
+  ([`b95bdc7`](https://github.com/IAmTheMitchell/renogy-ha/commit/b95bdc764930e239d28e69a4edcb127b9f311fcd))
+
+
 ## v0.2.2 (2025-04-07)
 
 ### Bug Fixes
