@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.2.5 (2025-04-08)
+
+### Bug Fixes
+
+- Update name to match throughout code
+  ([`a4cc088`](https://github.com/IAmTheMitchell/renogy-ha/commit/a4cc0889fd74536af240e8b69b6a76f54a02d890))
+
+### Chores
+
+- Update documented supported devices
+  ([`d2b08cc`](https://github.com/IAmTheMitchell/renogy-ha/commit/d2b08cc10e5c4f303e70abcacce36b29f9218283))
+
+
 ## v0.2.4 (2025-04-08)
 
 ### Bug Fixes
