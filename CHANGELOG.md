@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.2.4 (2025-04-08)
+
+### Bug Fixes
+
+- Remove invalid key from manifest
+  ([`9d98ad3`](https://github.com/IAmTheMitchell/renogy-ha/commit/9d98ad3f3d33ae84d75b6ddd2d4772a8c5a10ebd))
+
+### Chores
+
+- Sort by domain, name, then alphabetical order
+  ([`a53553d`](https://github.com/IAmTheMitchell/renogy-ha/commit/a53553d44f0ba58b4db7e0760910e03abb181b1c))
+
+### Continuous Integration
+
+- Add Hassfest validation
+  ([`a921529`](https://github.com/IAmTheMitchell/renogy-ha/commit/a921529c0357434cc69097254f10b07d588e0fba))
+
+
 ## v0.2.3 (2025-04-08)
 
 ### Bug Fixes
