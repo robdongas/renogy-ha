@@ -1,6 +1,6 @@
 {
   "domain": "renogy",
-  "name": "Renogy BLE",
+  "name": "Renogy",
   "bluetooth": [
     {
       "local_name": "BT-TH-*"
