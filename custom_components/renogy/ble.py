@@ -551,7 +551,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                         self.logger.debug("Connecting to device %s", device.name)
                         await client.connect()
                         if client.is_connected:
-                            self.logger.info("Connected to device %s", device.name)
+                            self.logger.debug("Connected to device %s", device.name)
 
                             # Create an event that will be set when notification data is received
                             notification_event = asyncio.Event()
