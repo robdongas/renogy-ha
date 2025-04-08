@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import traceback
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
 
@@ -350,7 +351,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 update_callback()
         except Exception as err:
             self.last_update_success = False
-            self.logger.error("Error refreshing device %s: %s", self.address, err)
+            error_traceback = traceback.format_exc()
+            self.logger.debug(
+                "Error refreshing device %s: %s\n%s",
+                self.address,
+                str(err),
+                error_traceback,
+            )
             if self.device:
                 self.device.update_availability(False)
 
