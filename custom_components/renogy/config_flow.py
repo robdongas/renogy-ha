@@ -68,7 +68,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
         LOGGER.debug(
             "Bluetooth auto-discovery for Renogy device: %s (%s)",
             discovery_info.name,
-            discovery_info.address
+            discovery_info.address,
         )
 
         # Set unique ID and check if already configured

@@ -137,7 +137,7 @@ class RenogyBLEDevice:
         if datetime.now() >= retry_time:
             LOGGER.debug(
                 "Retry interval reached for unavailable device %s. Attempting reconnection...",
-                self.name
+                self.name,
             )
             # Reset the unavailable time for the next retry interval
             self.last_unavailable_time = datetime.now()
@@ -152,7 +152,7 @@ class RenogyBLEDevice:
                 LOGGER.info(
                     "Device %s communication restored after %s consecutive failures",
                     self.name,
-                    self.failure_count
+                    self.failure_count,
                 )
             self.failure_count = 0
             if not self.available:
@@ -165,14 +165,14 @@ class RenogyBLEDevice:
                 "Communication failure with device %s (failure %s of %s)",
                 self.name,
                 self.failure_count,
-                self.max_failures
+                self.max_failures,
             )
 
             if self.failure_count >= self.max_failures and self.available:
                 LOGGER.warning(
                     "Device %s marked unavailable after %s consecutive failures",
                     self.name,
-                    self.max_failures
+                    self.max_failures,
                 )
                 self.available = False
                 self.last_unavailable_time = datetime.now()
@@ -194,7 +194,7 @@ class RenogyBLEDevice:
             LOGGER.error(
                 "Attempted to parse empty data from device %s for command %s.",
                 self.name,
-                cmd_name
+                cmd_name,
             )
             return False
 
@@ -212,7 +212,7 @@ class RenogyBLEDevice:
                     "Response too short for %s: %s bytes. Raw data: %s",
                     cmd_name,
                     len(raw_data),
-                    raw_data.hex()
+                    raw_data.hex(),
                 )
                 return False
 
@@ -224,7 +224,7 @@ class RenogyBLEDevice:
                     "Modbus error in %s response: function code %s, error code %s",
                     cmd_name,
                     function_code,
-                    error_code
+                    error_code,
                 )
                 return False
 
@@ -237,7 +237,7 @@ class RenogyBLEDevice:
                     "No data parsed from %s response (register %s). Length: %s",
                     cmd_name,
                     register,
-                    len(raw_data)
+                    len(raw_data),
                 )
                 return False
 
@@ -249,24 +249,21 @@ class RenogyBLEDevice:
                 "Successfully parsed %s data from device %s: %s",
                 cmd_name,
                 self.name,
-                parsed
+                parsed,
             )
             return True
 
         except Exception as e:
             LOGGER.error(
-                "Error parsing %s data from device %s: %s",
-                cmd_name,
-                self.name,
-                str(e)
+                "Error parsing %s data from device %s: %s", cmd_name, self.name, str(e)
             )
             # Log additional debug info to help diagnose the issue
             LOGGER.debug(
                 "Raw data for %s (register %s): %s, Length: %s",
                 cmd_name,
                 register,
-                raw_data.hex() if raw_data else 'None',
-                len(raw_data) if raw_data else 0
+                raw_data.hex() if raw_data else "None",
+                len(raw_data) if raw_data else 0,
             )
             return False
 
@@ -303,7 +300,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             "Initialized coordinator for %s as %s with %ss interval",
             address,
             device_type,
-            scan_interval
+            scan_interval,
         )
 
         # Add required properties for Home Assistant CoordinatorEntity compatibility
@@ -451,8 +448,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         )
         if not connectable_device:
             self.logger.warning(
-                "No connectable device found for %s",
-                service_info.address
+                "No connectable device found for %s", service_info.address
             )
             return False
 
@@ -474,7 +470,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             self.logger.debug(
                 "Time to poll device %s after %.1fs",
                 service_info.address,
-                time_since_poll
+                time_since_poll,
             )
 
         return should_poll
@@ -490,7 +486,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     self.logger.debug(
                         "Creating new RenogyBLEDevice for %s as %s",
                         service_info.address,
-                        self.device_type
+                        self.device_type,
                     )
                     self.device = RenogyBLEDevice(
                         service_info.device,
@@ -512,7 +508,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                             self.logger.debug(
                                 "Updated device name from '%s' to '%s'",
                                 old_name,
-                                service_info.name
+                                service_info.name,
                             )
 
                     # Prefer the RSSI from advertisement data if available
@@ -528,7 +524,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                         self.logger.debug(
                             "Updating device type from '%s' to '%s'",
                             self.device.device_type,
-                            self.device_type
+                            self.device_type,
                         )
                         self.device.device_type = self.device_type
 
@@ -537,7 +533,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     "Polling %s device: %s (%s)",
                     device.device_type,
                     device.name,
-                    device.address
+                    device.address,
                 )
                 success = False
 
@@ -572,7 +568,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                 self.logger.debug(
                                     "Sending %s command: %s",
                                     cmd_name,
-                                    list(modbus_request)
+                                    list(modbus_request),
                                 )
                                 await client.write_gatt_char(
                                     RENOGY_WRITE_CHAR_UUID, modbus_request
@@ -587,7 +583,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                     self.logger.info(
                                         "Timeout waiting for %s data from device %s",
                                         cmd_name,
-                                        device.name
+                                        device.name,
                                     )
                                     continue
 
@@ -595,7 +591,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                 self.logger.debug(
                                     "Received %s data length: %s",
                                     cmd_name,
-                                    len(result_data)
+                                    len(result_data),
                                 )
 
                                 cmd_success = device.update_parsed_data(
@@ -606,50 +602,46 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                     self.logger.debug(
                                         "Successfully read and parsed %s data from device %s",
                                         cmd_name,
-                                        device.name
+                                        device.name,
                                     )
                                     any_command_succeeded = True
                                 else:
                                     self.logger.info(
                                         "Failed to parse %s data from device %s",
                                         cmd_name,
-                                        device.name
+                                        device.name,
                                     )
 
                             await client.stop_notify(RENOGY_READ_CHAR_UUID)
                             success = any_command_succeeded
                         else:
                             self.logger.info(
-                                "Failed to connect to device %s",
-                                device.name
+                                "Failed to connect to device %s", device.name
                             )
                     except Exception as e:
                         self.logger.info(
-                            "Error reading data from device %s: %s",
-                            device.name,
-                            str(e)
+                            "Error reading data from device %s: %s", device.name, str(e)
                         )
                     finally:
                         if client and client.is_connected:
                             try:
                                 await client.disconnect()
                                 self.logger.debug(
-                                    "Disconnected from device %s",
-                                    device.name
+                                    "Disconnected from device %s", device.name
                                 )
                             except EOFError:
                                 # EOFError is common when the connection was already closed by the device
                                 # This is not a critical error, just log as debug
                                 self.logger.debug(
                                     "Connection already closed when disconnecting from device %s",
-                                    device.name
+                                    device.name,
                                 )
                             except Exception as e:
                                 # Only log other exceptions as warnings
                                 self.logger.warning(
                                     "Error disconnecting from device %s: %r",
                                     device.name,
-                                    e
+                                    e,
                                 )
 
                 device.update_availability(success)
@@ -672,9 +664,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         self.last_poll_time = datetime.now()
         self.logger.debug(
-            "Polling device: %s (%s)",
-            service_info.name,
-            service_info.address
+            "Polling device: %s (%s)", service_info.name, service_info.address
         )
 
         # Read device data using service_info and Home Assistant's Bluetooth API
