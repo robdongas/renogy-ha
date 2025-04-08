@@ -21,4 +21,5 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.semantic_release]
 branch = "main"
-version_toml = ["pyproject.toml:project.version", "custom_components/renogy_ha/manifest.json:version"]
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["custom_components/renogy_ha/manifest.json:version"]
