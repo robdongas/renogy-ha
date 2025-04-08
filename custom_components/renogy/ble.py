@@ -209,7 +209,7 @@ class RenogyBLEDevice:
             if (
                 len(raw_data) < 5
             ):  # At minimum, we need these 5 bytes for a valid response
-                LOGGER.debug(
+                LOGGER.warning(
                     "Response too short for %s: %s bytes. Raw data: %s",
                     cmd_name,
                     len(raw_data),
@@ -234,7 +234,7 @@ class RenogyBLEDevice:
             parsed = RenogyParser.parse(raw_data, self.device_type, register)
 
             if not parsed:
-                LOGGER.debug(
+                LOGGER.warning(
                     "No data parsed from %s response (register %s). Length: %s",
                     cmd_name,
                     register,
@@ -626,7 +626,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                 "Failed to connect to device %s", device.name
                             )
                     except Exception as e:
-                        self.logger.info(
+                        self.logger.error(
                             "Error reading data from device %s: %s", device.name, str(e)
                         )
                     finally:
