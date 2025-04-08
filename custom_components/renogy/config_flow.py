@@ -65,7 +65,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
         if not self._is_renogy_device(discovery_info):
             return self.async_abort(reason="not_supported_device")
 
-        LOGGER.info(
+        LOGGER.debug(
             f"Bluetooth auto-discovery for Renogy device: {discovery_info.name} ({discovery_info.address})"
         )
 
@@ -173,7 +173,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_discover_devices(self) -> None:
         """Discover Bluetooth devices."""
-        LOGGER.info("Scanning for Renogy BLE devices")
+        LOGGER.debug("Scanning for Renogy BLE devices")
 
         self._discovered_devices = {}
 
@@ -189,8 +189,8 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
 
             # Add to list of discovered devices
             self._discovered_devices[address] = discovery_info
-            LOGGER.info(f"Found Renogy device: {discovery_info.name} ({address})")
+            LOGGER.debug(f"Found Renogy device: {discovery_info.name} ({address})")
 
-        LOGGER.info(
+        LOGGER.debug(
             f"Found {len(self._discovered_devices)} unconfigured Renogy devices"
         )

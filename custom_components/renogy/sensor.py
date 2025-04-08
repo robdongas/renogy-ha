@@ -273,14 +273,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Renogy BLE sensors."""
-    LOGGER.info(f"Setting up Renogy BLE sensors for entry: {config_entry.entry_id}")
+    LOGGER.debug(f"Setting up Renogy BLE sensors for entry: {config_entry.entry_id}")
 
     renogy_data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = renogy_data["coordinator"]
 
     # Get device type from config
     device_type = config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
-    LOGGER.info(f"Setting up sensors for device type: {device_type}")
+    LOGGER.debug(f"Setting up sensors for device type: {device_type}")
 
     # Try to wait for a real device name before creating entities
     # This helps ensure entity IDs will match the real device name
@@ -289,7 +289,7 @@ async def async_setup_entry(
         or coordinator.device.name.startswith("Unknown")
         or not coordinator.device.name.startswith(RENOGY_BT_PREFIX)
     ):
-        LOGGER.info("Waiting for real device name before creating entities...")
+        LOGGER.debug("Waiting for real device name before creating entities...")
         # Force an immediate refresh to try getting device info
         await coordinator.async_request_refresh()
 
@@ -301,12 +301,12 @@ async def async_setup_entry(
             if coordinator.device and coordinator.device.name.startswith(
                 RENOGY_BT_PREFIX
             ):
-                LOGGER.info(f"Real device name found: {coordinator.device.name}")
+                LOGGER.debug(f"Real device name found: {coordinator.device.name}")
                 real_name_found = True
                 break
 
         if not real_name_found:
-            LOGGER.warning(
+            LOGGER.debug(
                 "No real device name found after waiting. Using generic name for entities."
             )
 
@@ -325,7 +325,7 @@ async def async_setup_entry(
 
     # Add all entities to Home Assistant
     if device_entities:
-        LOGGER.info(f"Adding {len(device_entities)} entities")
+        LOGGER.debug(f"Adding {len(device_entities)} entities")
         async_add_entities(device_entities)
     else:
         LOGGER.warning("No entities were created")
@@ -339,7 +339,7 @@ async def async_setup_entry(
             LOGGER.warning("Device update received but no device available")
             return
 
-        LOGGER.info(f"Device update: {device.name} (available: {device.is_available})")
+        LOGGER.debug(f"Device update: {device.name} (available: {device.is_available})")
 
         # We don't need to create new entities as they were already created during setup
         # The coordinator will automatically update all subscribed entities
@@ -479,7 +479,7 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                 hw_version=f"BLE Address: {self._device.address}",
                 sw_version=self._device_type.capitalize(),  # Add device type as software version
             )
-            LOGGER.info(f"Updated device info with real name: {self._device.name}")
+            LOGGER.debug(f"Updated device info with real name: {self._device.name}")
 
         return self._device
 
