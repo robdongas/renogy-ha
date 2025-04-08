@@ -330,20 +330,6 @@ async def async_setup_entry(
     else:
         LOGGER.warning("No entities were created")
 
-    # Set up a callback for device updates to update our entities
-    @callback
-    def _async_device_update() -> None:
-        """Handle device updates."""
-        device = coordinator.device
-        if not device:
-            LOGGER.warning("Device update received but no device available")
-            return
-
-        LOGGER.debug(f"Device update: {device.name} (available: {device.is_available})")
-
-        # We don't need to create new entities as they were already created during setup
-        # The coordinator will automatically update all subscribed entities
-
 
 def create_entities_helper(
     coordinator: RenogyActiveBluetoothCoordinator,
