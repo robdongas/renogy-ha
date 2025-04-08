@@ -2,9 +2,13 @@
 This custom Home Assistant integration provides monitoring capabilities for Renogy devices via Bluetooth Low Energy (BLE) connection, specifically for devices with BT-1 and BT-2 modules.
 
 ## Currently Supported Devices
-- Renogy Rover charge controller
+Tested:
+- Renogy Rover
 
-(Initially only Renogy Rover is supported. More devices may be added in the future.)
+Should work, but untested:
+- Renogy Wanderer
+- Renogy Adventurer
+- Renogy DC-DC Charger
 
 ## Features
 - Automatic discovery of Renogy BLE devices
