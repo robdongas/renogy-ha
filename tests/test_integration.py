@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 # Define constants locally to avoid importing from the actual module
-DOMAIN = "renogy_ha"
+DOMAIN = "renogy"
 CONF_SCAN_INTERVAL = "scan_interval"
 
 
