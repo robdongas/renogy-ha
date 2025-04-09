@@ -273,14 +273,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Renogy BLE sensors."""
-    LOGGER.info(f"Setting up Renogy BLE sensors for entry: {config_entry.entry_id}")
+    LOGGER.debug("Setting up Renogy BLE sensors for entry: %s", config_entry.entry_id)
 
     renogy_data = hass.data[DOMAIN][config_entry.entry_id]
     coordinator = renogy_data["coordinator"]
 
     # Get device type from config
     device_type = config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
-    LOGGER.info(f"Setting up sensors for device type: {device_type}")
+    LOGGER.debug("Setting up sensors for device type: %s", device_type)
 
     # Try to wait for a real device name before creating entities
     # This helps ensure entity IDs will match the real device name
@@ -289,7 +289,7 @@ async def async_setup_entry(
         or coordinator.device.name.startswith("Unknown")
         or not coordinator.device.name.startswith(RENOGY_BT_PREFIX)
     ):
-        LOGGER.info("Waiting for real device name before creating entities...")
+        LOGGER.debug("Waiting for real device name before creating entities...")
         # Force an immediate refresh to try getting device info
         await coordinator.async_request_refresh()
 
@@ -301,12 +301,12 @@ async def async_setup_entry(
             if coordinator.device and coordinator.device.name.startswith(
                 RENOGY_BT_PREFIX
             ):
-                LOGGER.info(f"Real device name found: {coordinator.device.name}")
+                LOGGER.debug("Real device name found: %s", coordinator.device.name)
                 real_name_found = True
                 break
 
         if not real_name_found:
-            LOGGER.warning(
+            LOGGER.debug(
                 "No real device name found after waiting. Using generic name for entities."
             )
 
@@ -315,7 +315,7 @@ async def async_setup_entry(
         coordinator.device.name.startswith(RENOGY_BT_PREFIX)
         or not coordinator.device.name.startswith("Unknown")
     ):
-        LOGGER.info(f"Creating entities with device name: {coordinator.device.name}")
+        LOGGER.info("Creating entities with device name: %s", coordinator.device.name)
         device_entities = create_device_entities(
             coordinator, coordinator.device, device_type
         )
@@ -325,24 +325,10 @@ async def async_setup_entry(
 
     # Add all entities to Home Assistant
     if device_entities:
-        LOGGER.info(f"Adding {len(device_entities)} entities")
+        LOGGER.debug("Adding %s entities", len(device_entities))
         async_add_entities(device_entities)
     else:
         LOGGER.warning("No entities were created")
-
-    # Set up a callback for device updates to update our entities
-    @callback
-    def _async_device_update() -> None:
-        """Handle device updates."""
-        device = coordinator.device
-        if not device:
-            LOGGER.warning("Device update received but no device available")
-            return
-
-        LOGGER.info(f"Device update: {device.name} (available: {device.is_available})")
-
-        # We don't need to create new entities as they were already created during setup
-        # The coordinator will automatically update all subscribed entities
 
 
 def create_entities_helper(
@@ -375,7 +361,7 @@ def create_coordinator_entities(
 ) -> List[RenogyBLESensor]:
     """Create sensor entities with just the coordinator (no device yet)."""
     entities = create_entities_helper(coordinator, None, device_type)
-    LOGGER.info(f"Created {len(entities)} entities with coordinator only")
+    LOGGER.info("Created %s entities with coordinator only", len(entities))
     return entities
 
 
@@ -386,7 +372,7 @@ def create_device_entities(
 ) -> List[RenogyBLESensor]:
     """Create sensor entities for a device."""
     entities = create_entities_helper(coordinator, device, device_type)
-    LOGGER.info(f"Created {len(entities)} entities for device {device.name}")
+    LOGGER.info("Created %s entities for device %s", len(entities), device.name)
     return entities
 
 
@@ -479,7 +465,7 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                 hw_version=f"BLE Address: {self._device.address}",
                 sw_version=self._device_type.capitalize(),  # Add device type as software version
             )
-            LOGGER.info(f"Updated device info with real name: {self._device.name}")
+            LOGGER.debug("Updated device info with real name: %s", self._device.name)
 
         return self._device
 
@@ -538,12 +524,16 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                             # Basic range validation
                             if value < -1000 or value > 10000:
                                 LOGGER.warning(
-                                    f"Value {value} out of reasonable range for {self.name}"
+                                    "Value %s out of reasonable range for %s",
+                                    value,
+                                    self.name,
                                 )
                                 return None
                         except (ValueError, TypeError):
                             LOGGER.warning(
-                                f"Invalid numeric value for {self.name}: {value}"
+                                "Invalid numeric value for %s: %s",
+                                self.name,
+                                value,
                             )
                             return None
 
@@ -551,13 +541,13 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
                 self._attr_native_value = value
                 return value
         except Exception as e:
-            LOGGER.warning(f"Error getting native value for {self.name}: {e}")
+            LOGGER.warning("Error getting native value for %s: %s", self.name, e)
         return None
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        LOGGER.debug(f"Coordinator update for {self.name}")
+        LOGGER.debug("Coordinator update for %s", self.name)
 
         # Clear cached value to force a refresh on next state read
         self._attr_native_value = None

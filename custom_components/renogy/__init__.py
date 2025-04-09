@@ -23,7 +23,7 @@ PLATFORMS = [Platform.SENSOR]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Renogy BLE from a config entry."""
-    LOGGER.info(f"Setting up Renogy BLE integration with entry {entry.entry_id}")
+    LOGGER.info("Setting up Renogy BLE integration with entry %s", entry.entry_id)
 
     # Get configuration from entry
     scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -35,7 +35,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return False
 
     LOGGER.info(
-        f"Configuring Renogy BLE device {device_address} as {device_type} with scan interval {scan_interval}s"
+        "Configuring Renogy BLE device %s as %s with scan interval %ss",
+        device_address,
+        device_type,
+        scan_interval,
     )
 
     # Create a coordinator for this entry
@@ -57,20 +60,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     # Forward entry setup to sensor platform
-    LOGGER.info(f"Setting up sensor platform for Renogy BLE device {device_address}")
+    LOGGER.info("Setting up sensor platform for Renogy BLE device %s", device_address)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Start the coordinator after all platforms are set up
     # This ensures all entities have had a chance to subscribe to the coordinator
-    LOGGER.info(f"Starting coordinator for Renogy BLE device {device_address}")
+    LOGGER.info("Starting coordinator for Renogy BLE device %s", device_address)
     try:
         start_func = coordinator.async_start()
         entry.async_on_unload(start_func)
     except Exception as e:
-        LOGGER.error(f"Error starting coordinator for {device_address}: {e}")
+        LOGGER.error("Error starting coordinator for %s: %s", device_address, e)
 
     # Force an immediate refresh
-    LOGGER.info(f"Requesting initial refresh for Renogy BLE device {device_address}")
+    LOGGER.info("Requesting initial refresh for Renogy BLE device %s", device_address)
     hass.async_create_task(coordinator.async_request_refresh())
 
     return True
@@ -80,7 +83,7 @@ async def _handle_device_update(
     hass: HomeAssistant, entry: ConfigEntry, device: RenogyBLEDevice
 ) -> None:
     """Handle device update callback."""
-    LOGGER.info(f"Device update for {device.name} ({device.address})")
+    LOGGER.debug("Device update for %s (%s)", device.name, device.address)
 
     # Make sure the device is in our registry
     if entry.entry_id in hass.data[DOMAIN]:
@@ -90,14 +93,14 @@ async def _handle_device_update(
         # Check if device is already in list by address
         device_addresses = [d.address for d in devices_list]
         if device.address not in device_addresses:
-            LOGGER.info(f"Adding device {device.name} to registry")
+            LOGGER.debug("Adding device %s to registry", device.name)
             devices_list.append(device)
 
             # Log the parsed data for debugging
             if device.parsed_data:
-                LOGGER.debug(f"Device data: {device.parsed_data}")
+                LOGGER.debug("Device data: %s", device.parsed_data)
             else:
-                LOGGER.warning(f"No parsed data for device {device.name}")
+                LOGGER.warning("No parsed data for device %s", device.name)
 
         # Update the device name in the Home Assistant device registry
         # This will ensure the device name is updated in the UI
@@ -124,19 +127,21 @@ async def update_device_registry(
 
         if device_entry:
             # Update the device name
-            LOGGER.info(f"Updating device registry entry with real name: {device.name}")
+            LOGGER.debug(
+                "Updating device registry entry with real name: %s", device.name
+            )
             device_registry.async_update_device(
                 device_entry.id, name=device.name, model=model
             )
         else:
-            LOGGER.info(f"Device {device.address} not found in registry for update")
+            LOGGER.debug("Device %s not found in registry for update", device.address)
     except Exception as e:
-        LOGGER.error(f"Error updating device in registry: {e}")
+        LOGGER.error("Error updating device in registry: %s", e)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    LOGGER.info(f"Unloading Renogy BLE integration for {entry.entry_id}")
+    LOGGER.debug("Unloading Renogy BLE integration for %s", entry.entry_id)
 
     # Unload platforms
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

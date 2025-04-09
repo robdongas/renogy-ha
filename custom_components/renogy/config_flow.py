@@ -65,8 +65,10 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
         if not self._is_renogy_device(discovery_info):
             return self.async_abort(reason="not_supported_device")
 
-        LOGGER.info(
-            f"Bluetooth auto-discovery for Renogy device: {discovery_info.name} ({discovery_info.address})"
+        LOGGER.debug(
+            "Bluetooth auto-discovery for Renogy device: %s (%s)",
+            discovery_info.name,
+            discovery_info.address,
         )
 
         # Set unique ID and check if already configured
@@ -98,7 +100,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
                 and user_input[CONF_DEVICE_TYPE] not in SUPPORTED_DEVICE_TYPES
             ):
                 device_type = user_input[CONF_DEVICE_TYPE]
-                LOGGER.warning(f"Unsupported device type selected: {device_type}")
+                LOGGER.warning("Unsupported device type selected: %s", device_type)
 
                 # Generate a user-friendly error message with the device type
                 return self.async_abort(
@@ -173,7 +175,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_discover_devices(self) -> None:
         """Discover Bluetooth devices."""
-        LOGGER.info("Scanning for Renogy BLE devices")
+        LOGGER.debug("Scanning for Renogy BLE devices")
 
         self._discovered_devices = {}
 
@@ -189,8 +191,8 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
 
             # Add to list of discovered devices
             self._discovered_devices[address] = discovery_info
-            LOGGER.info(f"Found Renogy device: {discovery_info.name} ({address})")
+            LOGGER.debug("Found Renogy device: %s (%s)", discovery_info.name, address)
 
-        LOGGER.info(
-            f"Found {len(self._discovered_devices)} unconfigured Renogy devices"
+        LOGGER.debug(
+            "Found %s unconfigured Renogy devices", len(self._discovered_devices)
         )
