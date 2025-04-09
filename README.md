@@ -1,4 +1,4 @@
-# Renogy Rover BLE Integration for Home Assistant
+# Renogy BLE Integration for Home Assistant
 This custom Home Assistant integration provides monitoring capabilities for Renogy devices via Bluetooth Low Energy (BLE) connection, specifically for devices with BT-1 and BT-2 modules.
 
 ## Currently Supported Devices
@@ -84,6 +84,13 @@ The integration provides the following sensor groups:
 All sensors are automatically added to Home Assistant's Energy Dashboard where applicable.
 
 ## Troubleshooting
+
+### Enable Debug Logging
+It can be extremely helpful to enable debug logging when troubleshooting issues.
+1. Open your Home Assistant instance and navigate to the [Renogy integration](https://my.home-assistant.io/redirect/integration/?domain=renogy)
+2. Select "Enable debug logging"
+3. Navigate to the [Home Assistant Core logs](https://my.home-assistant.io/redirect/logs/?provider=core)
+4. Select the three dots in the top right and choose "Show raw logs"
 
 ### Device Not Found
 1. Verify your Renogy device has a BT-1 or BT-2 module installed
