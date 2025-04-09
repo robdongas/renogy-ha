@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v0.2.6 (2025-04-09)
+
+### Bug Fixes
+
+- Add traceback to help debugging
+  ([`03256fa`](https://github.com/IAmTheMitchell/renogy-ha/commit/03256fa7466477e4448cd16ff4a05f4da93b0fee))
+
+- Change log severity to debug
+  ([`432ba83`](https://github.com/IAmTheMitchell/renogy-ha/commit/432ba837b042f92a0b2a3dfc3aa37416295cf851))
+
+- Configure log message severities
+  ([`d7d3877`](https://github.com/IAmTheMitchell/renogy-ha/commit/d7d38778f403aac648d5fa947925c5b8d17aea00))
+
+- Tweak log severities
+  ([`d9a82e7`](https://github.com/IAmTheMitchell/renogy-ha/commit/d9a82e72b5bd4b0db514e35ab5f95c244fd52a0c))
+
+### Code Style
+
+- Commas in log formatting
+  ([`8986068`](https://github.com/IAmTheMitchell/renogy-ha/commit/8986068efbd9f7d1a69c79873b329979cf5929fe))
+
+- Update all logging to use percent style formatting, per Home Assistant guidelines
+  ([`d380fa5`](https://github.com/IAmTheMitchell/renogy-ha/commit/d380fa5e6f89c0a46c411cafe83f02a358c48199))
+
+### Documentation
+
+- Update README with debug logging instructions
+  ([`5c98be2`](https://github.com/IAmTheMitchell/renogy-ha/commit/5c98be22450c4106c664d5f08b0d6f6bd3915014))
+
+### Refactoring
+
+- Remove unused function
+  ([`b11188f`](https://github.com/IAmTheMitchell/renogy-ha/commit/b11188f13635a68525c73ce54ae67681dc660f2f))
+
+
 ## v0.2.5 (2025-04-08)
 
 ### Bug Fixes
