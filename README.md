@@ -4,9 +4,9 @@ This custom Home Assistant integration provides monitoring capabilities for Reno
 ## Currently Supported Devices
 Tested:
 - Renogy Rover
+- Renogy Wanderer
 
 Should work, but untested:
-- Renogy Wanderer
 - Renogy Adventurer
 - Renogy DC-DC Charger
 
