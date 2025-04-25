@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.2.7 (2025-04-25)
+
+### Bug Fixes
+
+- Divide Power Generation Total value by 1000
+  ([`54545ca`](https://github.com/IAmTheMitchell/renogy-ha/commit/54545cafd59d97e81a36168c9e8c6ccd576f2371))
+
+### Chores
+
+- Add GitHub Copilot instructions
+  ([`155660f`](https://github.com/IAmTheMitchell/renogy-ha/commit/155660f26c514403c17c169f9fde03ba34fdd876))
+
+### Documentation
+
+- Update README after testing with Wanderer
+  ([`bf1478a`](https://github.com/IAmTheMitchell/renogy-ha/commit/bf1478a263f304fc8f9bd2282103482bfa296347))
+
+
 ## v0.2.6 (2025-04-09)
 
 ### Bug Fixes
