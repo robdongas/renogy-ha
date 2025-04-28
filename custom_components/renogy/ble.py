@@ -147,7 +147,9 @@ class RenogyBLEDevice:
 
         return False
 
-    def update_availability(self, success: bool) -> None:
+    def update_availability(
+        self, success: bool, error: Optional[Exception] = None
+    ) -> None:
         """Update the availability based on success/failure of communication."""
         if success:
             if self.failure_count > 0:
@@ -163,18 +165,22 @@ class RenogyBLEDevice:
                 self.last_unavailable_time = None
         else:
             self.failure_count += 1
+            error_msg = f": {str(error)}" if error else ""
             LOGGER.info(
-                "Communication failure with device %s (failure %s of %s)",
+                "Communication failure with device %s (failure %s of %s)%s",
                 self.name,
                 self.failure_count,
                 self.max_failures,
+                error_msg,
             )
 
             if self.failure_count >= self.max_failures and self.available:
+                error_msg = f": {str(error)}" if error else ""
                 LOGGER.warning(
-                    "Device %s marked unavailable after %s consecutive failures",
+                    "Device %s marked unavailable after %s consecutive failures%s",
                     self.name,
                     self.max_failures,
+                    error_msg,
                 )
                 self.available = False
                 self.last_unavailable_time = datetime.now()
@@ -360,7 +366,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 error_traceback,
             )
             if self.device:
-                self.device.update_availability(False)
+                self.device.update_availability(False, err)
 
     def async_add_listener(
         self, update_callback: Callable[[], None], context: Any = None
@@ -488,6 +494,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         async with self._connection_lock:
             try:
                 self._connection_in_progress = True
+                success = False
+                error = None
 
                 # Use service_info to get a BLE device and update our device object
                 if not self.device:
@@ -543,7 +551,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     device.name,
                     device.address,
                 )
-                success = False
 
                 # Use bleak-retry-connector for more robust connection
                 try:
@@ -628,16 +635,21 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
                         await client.stop_notify(RENOGY_READ_CHAR_UUID)
                         success = any_command_succeeded
+                        if not success:
+                            error = Exception("No commands completed successfully")
 
                     except BleakError as e:
-                        self.logger.error(
+                        self.logger.info(
                             "BLE error with device %s: %s", device.name, str(e)
                         )
-                        # No need to manually disconnect - the context manager will handle it
+                        error = e
+                        success = False
                     except Exception as e:
                         self.logger.error(
                             "Error reading data from device %s: %s", device.name, str(e)
                         )
+                        error = e
+                        success = False
                     finally:
                         # BleakClientWithServiceCache handles disconnect in context manager
                         # but we need to ensure the client is disconnected
@@ -653,6 +665,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                     device.name,
                                     str(e),
                                 )
+                                # Don't override previous errors with disconnect errors
+                                if error is None:
+                                    error = e
 
                 except (BleakError, asyncio.TimeoutError) as connection_error:
                     self.logger.error(
@@ -660,11 +675,14 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                         device.name,
                         str(connection_error),
                     )
+                    error = connection_error
                     success = False
 
-                device.update_availability(success)
+                # Always update the device availability and last_update_success
+                device.update_availability(success, error)
                 self.last_update_success = success
 
+                # Update coordinator data if successful
                 if success and device.parsed_data:
                     self.data = dict(device.parsed_data)
                     self.logger.debug("Updated coordinator data: %s", self.data)
@@ -705,6 +723,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         else:
             self.logger.info("Failed to retrieve data from %s", service_info.address)
             self.last_update_success = False
+            if self.device:
+                self.device.update_availability(
+                    False, Exception("Failed to retrieve data from device")
+                )
 
     @callback
     def _async_handle_unavailable(
@@ -713,7 +735,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         """Handle the device going unavailable."""
         self.logger.info("Device %s is no longer available", service_info.address)
         if self.device:
-            self.device.update_availability(False)
+            self.device.update_availability(
+                False, Exception("Device no longer available via Bluetooth")
+            )
         self.last_update_success = False
         self.async_update_listeners()
 

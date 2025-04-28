@@ -107,7 +107,7 @@ def test_coordinator_device_interaction(mock_coordinator, mock_renogy_device):
 
     # Add a callback function that will update the device
     def update_callback():
-        mock_renogy_device.update_availability(True)
+        mock_renogy_device.update_availability(True, None)
 
     # Register the callback with the coordinator
     mock_coordinator._listeners.append(update_callback)
@@ -124,7 +124,7 @@ def test_coordinator_device_interaction(mock_coordinator, mock_renogy_device):
         callback()
 
     # Device update was used to update data
-    mock_renogy_device.update_availability.assert_called_with(True)
+    mock_renogy_device.update_availability.assert_called_with(True, None)
 
 
 def test_malformed_data_handling(mock_coordinator, mock_renogy_device):
