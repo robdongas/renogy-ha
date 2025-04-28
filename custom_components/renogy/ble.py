@@ -6,8 +6,9 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
 
-from bleak import BleakClient
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
+from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
     BluetoothChange,
@@ -544,112 +545,122 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 )
                 success = False
 
-                async with BleakClient(service_info.device) as client:
+                # Use bleak-retry-connector for more robust connection
+                try:
+                    # Establish connection with retry capability
+                    client = await establish_connection(
+                        BleakClientWithServiceCache,
+                        service_info.device,
+                        device.name or device.address,
+                        max_attempts=3,
+                    )
+
                     any_command_succeeded = False
 
                     try:
-                        self.logger.debug("Connecting to device %s", device.name)
-                        await client.connect()
-                        if client.is_connected:
-                            self.logger.debug("Connected to device %s", device.name)
+                        self.logger.debug("Connected to device %s", device.name)
 
-                            # Create an event that will be set when notification data is received
-                            notification_event = asyncio.Event()
-                            notification_data = bytearray()
+                        # Create an event that will be set when notification data is received
+                        notification_event = asyncio.Event()
+                        notification_data = bytearray()
 
-                            def notification_handler(sender, data):
-                                notification_data.extend(data)
-                                notification_event.set()
+                        def notification_handler(sender, data):
+                            notification_data.extend(data)
+                            notification_event.set()
 
-                            await client.start_notify(
-                                RENOGY_READ_CHAR_UUID, notification_handler
+                        await client.start_notify(
+                            RENOGY_READ_CHAR_UUID, notification_handler
+                        )
+
+                        for cmd_name, cmd in COMMANDS[self.device_type].items():
+                            notification_data.clear()
+                            notification_event.clear()
+
+                            modbus_request = create_modbus_read_request(
+                                DEFAULT_DEVICE_ID, *cmd
+                            )
+                            self.logger.debug(
+                                "Sending %s command: %s",
+                                cmd_name,
+                                list(modbus_request),
+                            )
+                            await client.write_gatt_char(
+                                RENOGY_WRITE_CHAR_UUID, modbus_request
                             )
 
-                            for cmd_name, cmd in COMMANDS[self.device_type].items():
-                                notification_data.clear()
-                                notification_event.clear()
-
-                                modbus_request = create_modbus_read_request(
-                                    DEFAULT_DEVICE_ID, *cmd
+                            try:
+                                await asyncio.wait_for(
+                                    notification_event.wait(),
+                                    MAX_NOTIFICATION_WAIT_TIME,
                                 )
-                                self.logger.debug(
-                                    "Sending %s command: %s",
+                            except asyncio.TimeoutError:
+                                self.logger.info(
+                                    "Timeout waiting for %s data from device %s",
                                     cmd_name,
-                                    list(modbus_request),
+                                    device.name,
                                 )
-                                await client.write_gatt_char(
-                                    RENOGY_WRITE_CHAR_UUID, modbus_request
-                                )
+                                continue
 
-                                try:
-                                    await asyncio.wait_for(
-                                        notification_event.wait(),
-                                        MAX_NOTIFICATION_WAIT_TIME,
-                                    )
-                                except asyncio.TimeoutError:
-                                    self.logger.info(
-                                        "Timeout waiting for %s data from device %s",
-                                        cmd_name,
-                                        device.name,
-                                    )
-                                    continue
-
-                                result_data = bytes(notification_data)
-                                self.logger.debug(
-                                    "Received %s data length: %s",
-                                    cmd_name,
-                                    len(result_data),
-                                )
-
-                                cmd_success = device.update_parsed_data(
-                                    result_data, register=cmd[1], cmd_name=cmd_name
-                                )
-
-                                if cmd_success:
-                                    self.logger.debug(
-                                        "Successfully read and parsed %s data from device %s",
-                                        cmd_name,
-                                        device.name,
-                                    )
-                                    any_command_succeeded = True
-                                else:
-                                    self.logger.info(
-                                        "Failed to parse %s data from device %s",
-                                        cmd_name,
-                                        device.name,
-                                    )
-
-                            await client.stop_notify(RENOGY_READ_CHAR_UUID)
-                            success = any_command_succeeded
-                        else:
-                            self.logger.info(
-                                "Failed to connect to device %s", device.name
+                            result_data = bytes(notification_data)
+                            self.logger.debug(
+                                "Received %s data length: %s",
+                                cmd_name,
+                                len(result_data),
                             )
+
+                            cmd_success = device.update_parsed_data(
+                                result_data, register=cmd[1], cmd_name=cmd_name
+                            )
+
+                            if cmd_success:
+                                self.logger.debug(
+                                    "Successfully read and parsed %s data from device %s",
+                                    cmd_name,
+                                    device.name,
+                                )
+                                any_command_succeeded = True
+                            else:
+                                self.logger.info(
+                                    "Failed to parse %s data from device %s",
+                                    cmd_name,
+                                    device.name,
+                                )
+
+                        await client.stop_notify(RENOGY_READ_CHAR_UUID)
+                        success = any_command_succeeded
+
+                    except BleakError as e:
+                        self.logger.error(
+                            "BLE error with device %s: %s", device.name, str(e)
+                        )
+                        # No need to manually disconnect - the context manager will handle it
                     except Exception as e:
                         self.logger.error(
                             "Error reading data from device %s: %s", device.name, str(e)
                         )
                     finally:
-                        if client and client.is_connected:
+                        # BleakClientWithServiceCache handles disconnect in context manager
+                        # but we need to ensure the client is disconnected
+                        if client.is_connected:
                             try:
                                 await client.disconnect()
                                 self.logger.debug(
                                     "Disconnected from device %s", device.name
                                 )
-                            except EOFError:
-                                # EOFError is common when the connection was already closed by the device
-                                # This is not a critical error, just log as debug
-                                self.logger.debug(
-                                    "Connection already closed when disconnecting from device %s",
-                                    device.name,
-                                )
                             except Exception as e:
-                                # Only log other exceptions as warnings
-                                self.logger.warning(
-                                    "Error disconnecting from device %s: %r",
+                                self.logger.debug(
+                                    "Error disconnecting from device %s: %s",
                                     device.name,
-                                    e,
+                                    str(e),
                                 )
+
+                except (BleakError, asyncio.TimeoutError) as connection_error:
+                    self.logger.error(
+                        "Failed to establish connection with device %s: %s",
+                        device.name,
+                        str(connection_error),
+                    )
+                    success = False
 
                 device.update_availability(success)
                 self.last_update_success = success

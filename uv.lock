@@ -1310,10 +1310,11 @@ wheels = [
 
 [[package]]
 name = "renogy-ha"
-version = "0.2.6"
+version = "0.2.7"
 source = { virtual = "." }
 dependencies = [
     { name = "bleak" },
+    { name = "bleak-retry-connector" },
     { name = "homeassistant" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1323,6 +1324,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "bleak", specifier = ">=0.22.3" },
+    { name = "bleak-retry-connector", specifier = ">=3.9.0" },
     { name = "homeassistant", specifier = ">=2025.3.3" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=0.21.0" },
