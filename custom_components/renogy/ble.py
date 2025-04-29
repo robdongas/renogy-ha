@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import traceback
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
@@ -85,6 +86,17 @@ def create_modbus_read_request(
     return frame
 
 
+def clean_device_name(name: str) -> str:
+    """Clean the device name by removing unwanted characters."""
+
+    if name:
+        cleaned_name = name.strip()
+        cleaned_name = re.sub(r"\s+", " ", cleaned_name).strip()
+        return cleaned_name
+    else:
+        return ""
+
+
 class RenogyBLEDevice:
     """Representation of a Renogy BLE device."""
 
@@ -97,7 +109,10 @@ class RenogyBLEDevice:
         """Initialize the Renogy BLE device."""
         self.ble_device = ble_device
         self.address = ble_device.address
-        self.name = ble_device.name or "Unknown Renogy Device"
+
+        cleaned_name = clean_device_name(ble_device.name)
+        self.name = cleaned_name or "Unknown Renogy Device"
+
         # Use the provided advertisement RSSI if available, otherwise set to None
         self.rssi = advertisement_rssi
         self.last_seen = datetime.now()
@@ -160,14 +175,14 @@ class RenogyBLEDevice:
                 )
             self.failure_count = 0
             if not self.available:
-                LOGGER.debug("Device %s is now available", self.name)
+                LOGGER.info("Device %s is now available", self.name)
                 self.available = True
                 self.last_unavailable_time = None
         else:
             self.failure_count += 1
-            error_msg = f": {str(error)}" if error else ""
+            error_msg = f" Error message: {str(error)}" if error else ""
             LOGGER.info(
-                "Communication failure with device %s (failure %s of %s)%s",
+                "Communication failure with Renogy device: %s. (Consecutive polling failure #%s. Device will be marked unavailable after %s failures.)%s",
                 self.name,
                 self.failure_count,
                 self.max_failures,
@@ -175,9 +190,9 @@ class RenogyBLEDevice:
             )
 
             if self.failure_count >= self.max_failures and self.available:
-                error_msg = f": {str(error)}" if error else ""
-                LOGGER.warning(
-                    "Device %s marked unavailable after %s consecutive failures%s",
+                error_msg = f". Error message: {str(error)}" if error else ""
+                LOGGER.error(
+                    "Renogy device %s marked unavailable after %s consecutive polling failures%s",
                     self.name,
                     self.max_failures,
                     error_msg,
@@ -346,7 +361,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         # Get the last available service info for this device
         service_info = bluetooth.async_last_service_info(self.hass, self.address)
         if not service_info:
-            self.logger.warning("No service info available for device %s", self.address)
+            self.logger.error(
+                "No service info available for device %s. Ensure device is within range and powered on.",
+                self.address,
+            )
             self.last_update_success = False
             return
 
@@ -519,12 +537,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                         service_info.name
                         and service_info.name != "Unknown Renogy Device"
                     ):
-                        self.device.name = service_info.name
-                        if old_name != service_info.name:
+                        cleaned_name = clean_device_name(service_info.name)
+                        if old_name != cleaned_name:
+                            self.device.name = cleaned_name
                             self.logger.debug(
                                 "Updated device name from '%s' to '%s'",
                                 old_name,
-                                service_info.name,
+                                cleaned_name,
                             )
 
                     # Prefer the RSSI from advertisement data if available
@@ -670,7 +689,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                     error = e
 
                 except (BleakError, asyncio.TimeoutError) as connection_error:
-                    self.logger.error(
+                    self.logger.info(
                         "Failed to establish connection with device %s: %s",
                         device.name,
                         str(connection_error),
@@ -723,10 +742,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         else:
             self.logger.info("Failed to retrieve data from %s", service_info.address)
             self.last_update_success = False
-            if self.device:
-                self.device.update_availability(
-                    False, Exception("Failed to retrieve data from device")
-                )
 
     @callback
     def _async_handle_unavailable(
@@ -734,10 +749,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
     ) -> None:
         """Handle the device going unavailable."""
         self.logger.info("Device %s is no longer available", service_info.address)
-        if self.device:
-            self.device.update_availability(
-                False, Exception("Device no longer available via Bluetooth")
-            )
         self.last_update_success = False
         self.async_update_listeners()
 
