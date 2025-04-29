@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.2.8 (2025-04-29)
+
+### Bug Fixes
+
+- Change log level for specific errors
+  ([`b6c2e75`](https://github.com/IAmTheMitchell/renogy-ha/commit/b6c2e751f6d32019617c101d35fc8d37c176a72c))
+
+- Improve log clarity when device fails to connect
+  ([`eb789ce`](https://github.com/IAmTheMitchell/renogy-ha/commit/eb789cef17619b3ddc94bbfe8804cd75a11630a3))
+
+- Reduce connection errors with bleak-retry-connector
+  ([`763455f`](https://github.com/IAmTheMitchell/renogy-ha/commit/763455fc472fd1ab7f329020ed8c73c5bfd0ee01))
+
+### Build System
+
+- Upgrade homeassistant dependency
+  ([`0e36bd1`](https://github.com/IAmTheMitchell/renogy-ha/commit/0e36bd1ce1d46806ca9c1e600d6eac65a86611fd))
+
+### Chores
+
+- Update copilot instructions for uv
+  ([`353cecb`](https://github.com/IAmTheMitchell/renogy-ha/commit/353cecba086a8cb3dd94551a05ab731ce2163a3f))
+
+
 ## v0.2.7 (2025-04-25)
 
 ### Bug Fixes
