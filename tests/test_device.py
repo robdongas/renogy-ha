@@ -42,6 +42,7 @@ class TestRenogyBLEDevice:
                 self.parsed_data = {}
                 self.device_type = device_type
                 self.last_unavailable_time = None
+                self.update_availability_calls = []
 
             @property
             def is_available(self):
@@ -66,18 +67,25 @@ class TestRenogyBLEDevice:
                     return True
                 return False
 
-            def update_availability(self, success):
-                """Update the availability based on success/failure of communication."""
+            def update_availability(self, success, error=None):
+                self.update_availability_calls.append((success, error))
                 if success:
+                    if self.failure_count > 0:
+                        # Log would happen here in real implementation
+                        pass
                     self.failure_count = 0
-                    self.available = True
-                    self.last_unavailable_time = None
+                    if not self.available:
+                        # Log would happen here in real implementation
+                        self.available = True
+                        self.last_unavailable_time = None
                 else:
                     self.failure_count += 1
-                    if self.failure_count >= self.max_failures:
+                    # Log would happen here in real implementation
+
+                    if self.failure_count >= self.max_failures and self.available:
+                        # Log warning would happen here in real implementation
                         self.available = False
-                        if self.last_unavailable_time is None:
-                            self.last_unavailable_time = datetime.now()
+                        self.last_unavailable_time = datetime.now()
 
             def update_parsed_data(self, raw_data, register, cmd_name="unknown"):
                 """Simulate update_parsed_data function."""

@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "bleak>=0.22.3",
-    "homeassistant>=2025.3.3",
+    "bleak-retry-connector>=3.9.0",
+    "homeassistant>=2025.4.4",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.21.0",
     "renogy-ble>=0.2.1",

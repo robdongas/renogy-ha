@@ -2,12 +2,14 @@
 
 import asyncio
 import logging
+import re
 import traceback
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
 
-from bleak import BleakClient
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
+from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
     BluetoothChange,
@@ -84,6 +86,17 @@ def create_modbus_read_request(
     return frame
 
 
+def clean_device_name(name: str) -> str:
+    """Clean the device name by removing unwanted characters."""
+
+    if name:
+        cleaned_name = name.strip()
+        cleaned_name = re.sub(r"\s+", " ", cleaned_name).strip()
+        return cleaned_name
+    else:
+        return ""
+
+
 class RenogyBLEDevice:
     """Representation of a Renogy BLE device."""
 
@@ -96,7 +109,10 @@ class RenogyBLEDevice:
         """Initialize the Renogy BLE device."""
         self.ble_device = ble_device
         self.address = ble_device.address
-        self.name = ble_device.name or "Unknown Renogy Device"
+
+        cleaned_name = clean_device_name(ble_device.name)
+        self.name = cleaned_name or "Unknown Renogy Device"
+
         # Use the provided advertisement RSSI if available, otherwise set to None
         self.rssi = advertisement_rssi
         self.last_seen = datetime.now()
@@ -146,7 +162,9 @@ class RenogyBLEDevice:
 
         return False
 
-    def update_availability(self, success: bool) -> None:
+    def update_availability(
+        self, success: bool, error: Optional[Exception] = None
+    ) -> None:
         """Update the availability based on success/failure of communication."""
         if success:
             if self.failure_count > 0:
@@ -157,23 +175,27 @@ class RenogyBLEDevice:
                 )
             self.failure_count = 0
             if not self.available:
-                LOGGER.debug("Device %s is now available", self.name)
+                LOGGER.info("Device %s is now available", self.name)
                 self.available = True
                 self.last_unavailable_time = None
         else:
             self.failure_count += 1
+            error_msg = f" Error message: {str(error)}" if error else ""
             LOGGER.info(
-                "Communication failure with device %s (failure %s of %s)",
+                "Communication failure with Renogy device: %s. (Consecutive polling failure #%s. Device will be marked unavailable after %s failures.)%s",
                 self.name,
                 self.failure_count,
                 self.max_failures,
+                error_msg,
             )
 
             if self.failure_count >= self.max_failures and self.available:
-                LOGGER.warning(
-                    "Device %s marked unavailable after %s consecutive failures",
+                error_msg = f". Error message: {str(error)}" if error else ""
+                LOGGER.error(
+                    "Renogy device %s marked unavailable after %s consecutive polling failures%s",
                     self.name,
                     self.max_failures,
+                    error_msg,
                 )
                 self.available = False
                 self.last_unavailable_time = datetime.now()
@@ -339,7 +361,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         # Get the last available service info for this device
         service_info = bluetooth.async_last_service_info(self.hass, self.address)
         if not service_info:
-            self.logger.warning("No service info available for device %s", self.address)
+            self.logger.error(
+                "No service info available for device %s. Ensure device is within range and powered on.",
+                self.address,
+            )
             self.last_update_success = False
             return
 
@@ -359,7 +384,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 error_traceback,
             )
             if self.device:
-                self.device.update_availability(False)
+                self.device.update_availability(False, err)
 
     def async_add_listener(
         self, update_callback: Callable[[], None], context: Any = None
@@ -487,6 +512,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         async with self._connection_lock:
             try:
                 self._connection_in_progress = True
+                success = False
+                error = None
 
                 # Use service_info to get a BLE device and update our device object
                 if not self.device:
@@ -510,12 +537,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                         service_info.name
                         and service_info.name != "Unknown Renogy Device"
                     ):
-                        self.device.name = service_info.name
-                        if old_name != service_info.name:
+                        cleaned_name = clean_device_name(service_info.name)
+                        if old_name != cleaned_name:
+                            self.device.name = cleaned_name
                             self.logger.debug(
                                 "Updated device name from '%s' to '%s'",
                                 old_name,
-                                service_info.name,
+                                cleaned_name,
                             )
 
                     # Prefer the RSSI from advertisement data if available
@@ -542,118 +570,138 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     device.name,
                     device.address,
                 )
-                success = False
 
-                async with BleakClient(service_info.device) as client:
+                # Use bleak-retry-connector for more robust connection
+                try:
+                    # Establish connection with retry capability
+                    client = await establish_connection(
+                        BleakClientWithServiceCache,
+                        service_info.device,
+                        device.name or device.address,
+                        max_attempts=3,
+                    )
+
                     any_command_succeeded = False
 
                     try:
-                        self.logger.debug("Connecting to device %s", device.name)
-                        await client.connect()
-                        if client.is_connected:
-                            self.logger.debug("Connected to device %s", device.name)
+                        self.logger.debug("Connected to device %s", device.name)
 
-                            # Create an event that will be set when notification data is received
-                            notification_event = asyncio.Event()
-                            notification_data = bytearray()
+                        # Create an event that will be set when notification data is received
+                        notification_event = asyncio.Event()
+                        notification_data = bytearray()
 
-                            def notification_handler(sender, data):
-                                notification_data.extend(data)
-                                notification_event.set()
+                        def notification_handler(sender, data):
+                            notification_data.extend(data)
+                            notification_event.set()
 
-                            await client.start_notify(
-                                RENOGY_READ_CHAR_UUID, notification_handler
+                        await client.start_notify(
+                            RENOGY_READ_CHAR_UUID, notification_handler
+                        )
+
+                        for cmd_name, cmd in COMMANDS[self.device_type].items():
+                            notification_data.clear()
+                            notification_event.clear()
+
+                            modbus_request = create_modbus_read_request(
+                                DEFAULT_DEVICE_ID, *cmd
+                            )
+                            self.logger.debug(
+                                "Sending %s command: %s",
+                                cmd_name,
+                                list(modbus_request),
+                            )
+                            await client.write_gatt_char(
+                                RENOGY_WRITE_CHAR_UUID, modbus_request
                             )
 
-                            for cmd_name, cmd in COMMANDS[self.device_type].items():
-                                notification_data.clear()
-                                notification_event.clear()
-
-                                modbus_request = create_modbus_read_request(
-                                    DEFAULT_DEVICE_ID, *cmd
+                            try:
+                                await asyncio.wait_for(
+                                    notification_event.wait(),
+                                    MAX_NOTIFICATION_WAIT_TIME,
                                 )
-                                self.logger.debug(
-                                    "Sending %s command: %s",
+                            except asyncio.TimeoutError:
+                                self.logger.info(
+                                    "Timeout waiting for %s data from device %s",
                                     cmd_name,
-                                    list(modbus_request),
+                                    device.name,
                                 )
-                                await client.write_gatt_char(
-                                    RENOGY_WRITE_CHAR_UUID, modbus_request
-                                )
+                                continue
 
-                                try:
-                                    await asyncio.wait_for(
-                                        notification_event.wait(),
-                                        MAX_NOTIFICATION_WAIT_TIME,
-                                    )
-                                except asyncio.TimeoutError:
-                                    self.logger.info(
-                                        "Timeout waiting for %s data from device %s",
-                                        cmd_name,
-                                        device.name,
-                                    )
-                                    continue
-
-                                result_data = bytes(notification_data)
-                                self.logger.debug(
-                                    "Received %s data length: %s",
-                                    cmd_name,
-                                    len(result_data),
-                                )
-
-                                cmd_success = device.update_parsed_data(
-                                    result_data, register=cmd[1], cmd_name=cmd_name
-                                )
-
-                                if cmd_success:
-                                    self.logger.debug(
-                                        "Successfully read and parsed %s data from device %s",
-                                        cmd_name,
-                                        device.name,
-                                    )
-                                    any_command_succeeded = True
-                                else:
-                                    self.logger.info(
-                                        "Failed to parse %s data from device %s",
-                                        cmd_name,
-                                        device.name,
-                                    )
-
-                            await client.stop_notify(RENOGY_READ_CHAR_UUID)
-                            success = any_command_succeeded
-                        else:
-                            self.logger.info(
-                                "Failed to connect to device %s", device.name
+                            result_data = bytes(notification_data)
+                            self.logger.debug(
+                                "Received %s data length: %s",
+                                cmd_name,
+                                len(result_data),
                             )
+
+                            cmd_success = device.update_parsed_data(
+                                result_data, register=cmd[1], cmd_name=cmd_name
+                            )
+
+                            if cmd_success:
+                                self.logger.debug(
+                                    "Successfully read and parsed %s data from device %s",
+                                    cmd_name,
+                                    device.name,
+                                )
+                                any_command_succeeded = True
+                            else:
+                                self.logger.info(
+                                    "Failed to parse %s data from device %s",
+                                    cmd_name,
+                                    device.name,
+                                )
+
+                        await client.stop_notify(RENOGY_READ_CHAR_UUID)
+                        success = any_command_succeeded
+                        if not success:
+                            error = Exception("No commands completed successfully")
+
+                    except BleakError as e:
+                        self.logger.info(
+                            "BLE error with device %s: %s", device.name, str(e)
+                        )
+                        error = e
+                        success = False
                     except Exception as e:
                         self.logger.error(
                             "Error reading data from device %s: %s", device.name, str(e)
                         )
+                        error = e
+                        success = False
                     finally:
-                        if client and client.is_connected:
+                        # BleakClientWithServiceCache handles disconnect in context manager
+                        # but we need to ensure the client is disconnected
+                        if client.is_connected:
                             try:
                                 await client.disconnect()
                                 self.logger.debug(
                                     "Disconnected from device %s", device.name
                                 )
-                            except EOFError:
-                                # EOFError is common when the connection was already closed by the device
-                                # This is not a critical error, just log as debug
-                                self.logger.debug(
-                                    "Connection already closed when disconnecting from device %s",
-                                    device.name,
-                                )
                             except Exception as e:
-                                # Only log other exceptions as warnings
-                                self.logger.warning(
-                                    "Error disconnecting from device %s: %r",
+                                self.logger.debug(
+                                    "Error disconnecting from device %s: %s",
                                     device.name,
-                                    e,
+                                    str(e),
                                 )
+                                # Don't override previous errors with disconnect errors
+                                if error is None:
+                                    error = e
 
-                device.update_availability(success)
+                except (BleakError, asyncio.TimeoutError) as connection_error:
+                    self.logger.info(
+                        "Failed to establish connection with device %s: %s",
+                        device.name,
+                        str(connection_error),
+                    )
+                    error = connection_error
+                    success = False
+
+                # Always update the device availability and last_update_success
+                device.update_availability(success, error)
                 self.last_update_success = success
 
+                # Update coordinator data if successful
                 if success and device.parsed_data:
                     self.data = dict(device.parsed_data)
                     self.logger.debug("Updated coordinator data: %s", self.data)
@@ -701,8 +749,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
     ) -> None:
         """Handle the device going unavailable."""
         self.logger.info("Device %s is no longer available", service_info.address)
-        if self.device:
-            self.device.update_availability(False)
         self.last_update_success = False
         self.async_update_listeners()
 
